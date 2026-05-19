@@ -128,11 +128,13 @@ These sources are also used for analysis responses: they increase source reliabi
 
 Global prediction markets mostly revolve around US politics, major global geopolitical events, crypto, and popular sports topics. In countries like Turkey — large, news-heavy, with active social media and high betting demand — many local events disappear without ever becoming markets.
 
+<img width="1919" height="954" alt="Screenshot_7" src="https://github.com/user-attachments/assets/02d6e03a-963a-47bf-92ab-a5ca889e5b46" />
+
 The Rasim Ozan Kutahyali case became a useful example to illustrate this gap, because it is a very recent event I wanted to use as a reference.
 
 In May 2026, Euronews and other news sources reported that Rasim Ozan Kutahyali had been detained and arrested as part of an investigation centered in Adana into illegal betting, aggravated fraud, bribery, and money laundering. The Bianet topic tag shows that this same public figure had previously made headlines in other legal and media controversies. These reports do not mean a conviction; they simply show an ongoing legal process that could serve as the basis for market design. This story is already flagged in our infrastructure.
 
-**[Our site's Rasim Ozan story]**
+<img width="1919" height="955" alt="Screenshot_8" src="https://github.com/user-attachments/assets/13772042-079e-4865-8c01-178be149b50a" />
 
 Why does this event carry market potential?
 
@@ -143,7 +145,9 @@ Why does this event carry market potential?
 - This creates a local knowledge gap in prediction markets: events widely discussed in Turkey do not turn into markets on global platforms.
 - This gap represents both missed user interest and lost potential liquidity.
 
-**[Rasim Ozan X trend photo]** **[Rasim Ozan Google Trends photo]**
+<img width="1916" height="948" alt="Screenshot_6" src="https://github.com/user-attachments/assets/5e0d2ee4-11e0-47bb-a55d-0bc4c408a49f" />
+<img width="1080" height="2146" alt="photo_2026-05-19_22-21-11" src="https://github.com/user-attachments/assets/2d4c654f-c482-4485-ba5b-fadca0522cbf" />
+
 
 Important principle: the market question must not declare the person guilty. Instead of vague, legally risky questions like "Is he guilty?", the design should use officially verifiable process questions.
 
@@ -258,8 +262,6 @@ Why does this matter? In prediction market analysis, timing is critical. A stale
 
 Source: [sentient-agi/OpenDeepSearch](https://github.com/sentient-agi/OpenDeepSearch)
 
-![OpenDeepSearch evaluation](https://raw.githubusercontent.com/sentient-agi/OpenDeepSearch/main/assets/evals.png)
-
 ### ROMA
 
 ROMA stands for "Recursive Open Meta-Agent." It addresses the fact that LLM agents struggle with limited context and sequential reasoning on complex tasks, and uses hierarchical decomposition of tasks into sub-problems with parallel solving and aggregation logic.
@@ -274,11 +276,9 @@ Samsun Market Intel uses ROMA not as a fully autonomous swarm, but as a decompos
 
 This structure is used to avoid blindly trusting a single model response. In prediction markets, a good answer is not just "buy YES" or "buy NO" — a good answer also addresses "with what evidence, with what missing data, with what risk, and under what conditions would my view change?"
 
+![ROMA](https://github.com/sentient-agi/ROMA/raw/main/assets/roma_run.gif)
+
 Source: [sentient-agi/ROMA](https://github.com/sentient-agi/ROMA)
-
-![ROMA architecture](https://raw.githubusercontent.com/sentient-agi/ROMA/main/assets/arc.png)
-
-![ROMA benchmark results](https://raw.githubusercontent.com/sentient-agi/ROMA/main/assets/result.png)
 
 ### CryptoAnalystBench
 
@@ -296,11 +296,9 @@ Samsun Market Intel uses this as a quality-control layer for prediction markets 
 - is it overconfident,
 - is there a risk of stale data or misinterpreting quotes/prices?
 
+<img width="1499" height="1038" alt="image" src="https://github.com/user-attachments/assets/dc041fc5-1565-427f-961d-2add18f21c6e" />
+
 Source: [sentient-agi/CryptoAnalystBench](https://github.com/sentient-agi/CryptoAnalystBench)
-
-![CryptoAnalystBench leaderboard](https://raw.githubusercontent.com/sentient-agi/CryptoAnalystBench/main/figures/CAB_leaderboard.png)
-
-![CryptoAnalystBench query distribution](https://raw.githubusercontent.com/sentient-agi/CryptoAnalystBench/main/figures/CAB_query_distribution.png)
 
 ## Model and Provider Selection
 

@@ -1,15 +1,15 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 
+import { resolveCircleCliPath } from "@/src/product/circleCli";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 
 type BudgetStatus = "ok" | "missing" | "unavailable";
 
@@ -75,7 +75,7 @@ async function readGatewayBalance(): Promise<BudgetItem> {
 
   try {
     const { stdout } = await execFileAsync(
-      resolveCirclePath(),
+      resolveCircleCliPath(),
       ["gateway", "balance", "--address", address, "--chain", chain, "--output", "json"],
       {
         maxBuffer: 1024 * 1024,
@@ -114,7 +114,7 @@ async function readWalletBalance(): Promise<BudgetItem> {
 
   try {
     const { stdout } = await execFileAsync(
-      resolveCirclePath(),
+      resolveCircleCliPath(),
       ["wallet", "balance", "--address", address, "--chain", chain, "--output", "json"],
       {
         maxBuffer: 1024 * 1024,
@@ -244,12 +244,4 @@ function collectNestedBalanceRows(record: Record<string, unknown>): Array<Record
     }
   }
   return rows;
-}
-
-function resolveCirclePath() {
-  if (process.env.CIRCLE_CLI_PATH) return process.env.CIRCLE_CLI_PATH;
-  if (process.platform === "win32" && existsSync(DEFAULT_WINDOWS_CIRCLE)) {
-    return DEFAULT_WINDOWS_CIRCLE;
-  }
-  return "circle";
 }

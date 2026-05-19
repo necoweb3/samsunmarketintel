@@ -12,6 +12,7 @@ import {
   analysisReceiptAbi,
   ARC_TESTNET_CHAIN_ID,
 } from "@/src/arc/analysisReceipt";
+import { resolveCircleCliPath } from "@/src/product/circleCli";
 import { buildIntentReceiptCandidate } from "@/src/product/intentReceipt";
 import { readIntentLedger } from "@/src/product/intentLedger";
 
@@ -20,7 +21,6 @@ export const runtime = "nodejs";
 
 const LATEST_INTENT_RECEIPT_CACHE = ".cache/arc/latest-intent-receipt.json";
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 
 export async function GET() {
   try {
@@ -405,9 +405,7 @@ function buildCliArgs({
 }
 
 function resolveCirclePath() {
-  if (process.env.CIRCLE_CLI_PATH) return process.env.CIRCLE_CLI_PATH;
-  if (process.platform === "win32") return DEFAULT_WINDOWS_CIRCLE;
-  return "circle";
+  return resolveCircleCliPath();
 }
 
 function buildCircleInvocation(args: string[]) {

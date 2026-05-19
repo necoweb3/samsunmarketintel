@@ -5,8 +5,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 
+import { resolveCircleCliPath } from "@/src/product/circleCli";
+
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 const DEFAULT_LIVE_X402_BUDGET_USDC = 6;
 
 export type LiveX402ServiceId =
@@ -695,9 +696,7 @@ function buildCircleInvocation(args: string[]) {
     return { file: "node", args: [jsPath, ...args] };
   }
 
-  const circlePath =
-    process.env.CIRCLE_CLI_PATH ||
-    (process.platform === "win32" ? DEFAULT_WINDOWS_CIRCLE : "circle");
+  const circlePath = resolveCircleCliPath();
   if (process.platform !== "win32") {
     return { file: circlePath, args };
   }

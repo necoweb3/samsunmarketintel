@@ -18,6 +18,7 @@ references/
 .vercel/
 .turbo/
 .cache/
+.npm-cache/
 
 *.log
 npm-debug.log*

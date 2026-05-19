@@ -1,17 +1,16 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 
+import { resolveCircleCliPath } from "@/src/product/circleCli";
 import { x402GatewayStatus } from "@/src/product/x402Catalog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 
 type GatewayCliResponse = {
   data?: {
@@ -43,7 +42,7 @@ export async function GET() {
 
   try {
     const { stdout } = await execFileAsync(
-      resolveCirclePath(),
+      resolveCircleCliPath(),
       ["gateway", "balance", "--address", address, "--chain", chain, "--output", "json"],
       {
         maxBuffer: 1024 * 1024,
@@ -91,12 +90,4 @@ export async function GET() {
       },
     );
   }
-}
-
-function resolveCirclePath() {
-  if (process.env.CIRCLE_CLI_PATH) return process.env.CIRCLE_CLI_PATH;
-  if (process.platform === "win32" && existsSync(DEFAULT_WINDOWS_CIRCLE)) {
-    return DEFAULT_WINDOWS_CIRCLE;
-  }
-  return "circle";
 }

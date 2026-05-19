@@ -68,7 +68,7 @@ The agent's response includes:
 
 ### Markets
 
-The Markets screen is for loading a Polymarket link directly — an alternative for those who do not want to use the Chat interface. The analysis is identical to the chat analysis.
+The Markets screen is for loading a Polymarket link directly , an alternative for those who do not want to use the Chat interface. The analysis is identical to the chat analysis.
 
 Flow:
 
@@ -88,7 +88,7 @@ I designed the Market Ideas section to address what I see as the biggest gap in 
 
 > For example, let's research: which news stories in Turkey today could turn into prediction markets?
 
-The system scans Turkish sources, displays news as cards, and flags only the events that genuinely carry market potential. Signals like "potential high" or "watch" describe the likelihood that a story turns into a market — they do not mean the story is accurate or that an outcome is confirmed.
+The system scans Turkish sources, displays news as cards, and flags only the events that genuinely carry market potential. Signals like "potential high" or "watch" describe the likelihood that a story turns into a market , they do not mean the story is accurate or that an outcome is confirmed.
 
 Example market verticals:
 
@@ -126,7 +126,7 @@ These sources are also used for analysis responses: they increase source reliabi
 
 ## Turkey Example for the Market Ideas Section
 
-Global prediction markets mostly revolve around US politics, major global geopolitical events, crypto, and popular sports topics. In countries like Turkey — large, news-heavy, with active social media and high betting demand — many local events disappear without ever becoming markets.
+Global prediction markets mostly revolve around US politics, major global geopolitical events, crypto, and popular sports topics. In countries like Turkey , large, news-heavy, with active social media and high betting demand , many local events disappear without ever becoming markets.
 
 <img width="1919" height="954" alt="Screenshot_7" src="https://github.com/user-attachments/assets/02d6e03a-963a-47bf-92ab-a5ca889e5b46" />
 
@@ -198,7 +198,7 @@ Discussions around regulated and illegal betting in Turkey point to enormous dem
 
 These figures show that there is serious betting interest in Turkey, but a large portion of that interest is not flowing into transparent, measurable, and regulated prediction markets. That is exactly where Samsun Market Intel comes in: by adding local sources, scanning daily and weekly agendas, and turning marketable events into measurable proposals, the goal is to channel this untapped demand into the prediction-market ecosystem.
 
-This approach is not limited to Turkey — it can be applied to any country. The user adds sources from their own country, and the system finds events in that country's news that carry market potential.
+This approach is not limited to Turkey , it can be applied to any country. The user adds sources from their own country, and the system finds events in that country's news that carry market potential.
 
 ## Role of Circle, x402, and Arc
 
@@ -274,7 +274,7 @@ Samsun Market Intel uses ROMA not as a fully autonomous swarm, but as a decompos
 - **Policy reviewer:** Enforces the rule that the agent must not trade automatically and that manual approval is required.
 - **Oracle-source checker:** Examines how the market resolves and which sources will be valid for resolution.
 
-This structure is used to avoid blindly trusting a single model response. In prediction markets, a good answer is not just "buy YES" or "buy NO" — a good answer also addresses "with what evidence, with what missing data, with what risk, and under what conditions would my view change?"
+This structure is used to avoid blindly trusting a single model response. In prediction markets, a good answer is not just "buy YES" or "buy NO" , a good answer also addresses "with what evidence, with what missing data, with what risk, and under what conditions would my view change?"
 
 ![ROMA](https://github.com/sentient-agi/ROMA/raw/main/assets/roma_run.gif)
 

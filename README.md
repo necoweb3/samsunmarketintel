@@ -8,7 +8,7 @@ Samsun Market Intel is a prediction-market intelligence product built for the Ar
 In short: the user provides a Polymarket link, a market question, or a news event. Samsun Market Intel now runs as a two-layer analysis product:
 
 1. **Base layer:** OpenDeepSearch -> ROMA-style review -> CryptoAnalystBench quality check when relevant -> answer.
-2. **x402 upgrade layer:** Circle x402 paid services run as a separate evidence pass. BlockRun, Tavily, Exa/Parallel, market-data, social, and other relevant services run first; Perplexity Deep Research runs after that; the combined paid evidence then goes into ROMA-style review and optional CryptoAnalystBench quality control.
+2. **x402 upgrade layer:** Circle x402 paid services run as a separate evidence pass. BlockRun, Tavily, Exa/Parallel, market-data, social, and other relevant services run first; Perplexity Deep Research runs after that; the combined paid evidence then goes into ROMA-style review and, when needed, CryptoAnalystBench quality control.
 
 The x402 layer does **not** send paid results back into OpenDeepSearch. OpenDeepSearch is the base research layer; x402 is the paid evidence upgrade layer.
 

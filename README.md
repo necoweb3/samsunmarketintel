@@ -7,14 +7,12 @@ Samsun Market Intel is a prediction-market intelligence product built for the Ar
 
 In short: the user provides a Polymarket link, a market question, or a news event. Samsun Market Intel now runs as a two-layer analysis product:
 
-1. **Base layer:** OpenDeepSearch -> ROMA-style review -> CryptoAnalystBench quality check when relevant -> answer.
-2. **x402 upgrade layer:** Circle x402 paid services run as a separate evidence pass. BlockRun, Tavily, Exa/Parallel, market-data, social, and other relevant services run first; Perplexity Deep Research runs after that; the combined paid evidence then goes into ROMA-style review and, when needed, CryptoAnalystBench quality control.
-
-The x402 layer does **not** send paid results back into OpenDeepSearch. OpenDeepSearch is the base research layer; x402 is the paid evidence upgrade layer.
+1. **Base layer:** OpenDeepSearch -> ROMA review -> CryptoAnalystBench quality check when relevant -> answer.
+2. **x402 upgrade layer:** Circle x402 paid services run as a separate evidence pass. BlockRun, Tavily, Exa/Parallel, market-data, social, and other relevant services run first; Perplexity Deep Research runs after that; the combined paid evidence then goes into ROMA review and, when needed, CryptoAnalystBench quality control.
 
 The result explains which outcome makes more sense, what evidence is missing, where the market price looks wrong, how to size a position if one is to be opened, and when to wait instead.
 
-The product does not place bets automatically. The agent only prepares a manual trade intent; no wallet transaction or bet execution happens without user approval. If desired, this intent can be recorded as a proof/receipt on Arc Testnet.
+The agent does not place bets automatically. The agent only prepares a manual trade intent; no wallet transaction or bet execution happens without user approval. If desired, this intent can be recorded as a proof/receipt on Arc Testnet.
 
 ## Why Is This Needed?
 
@@ -40,7 +38,7 @@ Some signals are always available; others depend on whether the paid provider re
 | Feature | Current status |
 | --- | --- |
 | Base OpenDeepSearch analysis | Live. Runs before x402 and stays as the baseline. |
-| ROMA-style review | Live as a structured reviewer pattern inside the prompt and UI flow. |
+| ROMA review | Live as a structured reviewer pattern inside the prompt and UI flow. |
 | CryptoAnalystBench quality check | Live for crypto/Web3/stablecoin/onchain-related markets; skipped elsewhere. |
 | Kelly-style sizing | Live deterministic sizing when market quote, fair probability, confidence, and risk are available. If the edge is missing or below threshold, stake is `$0`. |
 | Holder concentration | Live only when x402 top-holder endpoints return exact holder rows. Otherwise the UI marks "No rows" or "Skipped." |
@@ -96,9 +94,9 @@ Flow:
 1. User pastes a Polymarket link.
 2. The system loads the market title, outcome structure, visual, and available information.
 3. User manually triggers Analyze.
-4. The initial analysis is done via the base layer: OpenDeepSearch + registered sources + ROMA-style review + model layer.
+4. The initial analysis is done via the base layer: OpenDeepSearch + registered sources + ROMA review + model layer.
 5. If desired, the user calls paid data with "Upgrade with Circle x402 research." The UI shows the approved cap and expected service-max cost before the user approves the paid pass.
-6. x402 results are processed in a separate upgrade layer: BlockRun/Tavily/Exa/Parallel/market-data/social services first, Perplexity Deep Research second, then ROMA-style review and optional CryptoAnalystBench.
+6. x402 results are processed in a separate upgrade layer: BlockRun/Tavily/Exa/Parallel/market-data/social services first, Perplexity Deep Research second, then ROMA review and optional CryptoAnalystBench.
 7. The previous base analysis is preserved and compared against the x402-upgraded analysis.
 8. The agent updates its decision: bet, avoid, watch, or side-specific lean.
 9. The user can manually stage an intent.
@@ -214,7 +212,7 @@ Defamation risk, ambiguity risk, delayed court records, politically charged cove
 
 Discussions around regulated and illegal betting in Turkey point to enormous demand:
 
-- According to Xinhua / Big News Network, Turkish security forces conducted 1,120 operations targeting illegal online betting and gambling between January 1, 2024 and October 6, 2025; assets worth 15.8 billion TRY were seized, and the legal betting market revenue for 2024 reportedly reached 590.9 billion TRY.
+- According to Xinhua / Big News Network, Turkish security forces conducted 1,120 operations targeting illegal online betting and gambling between January 1, 2024 and October 6, 2025; assets worth 15.8 billion TRY (346 million USD) were seized, and the legal betting market revenue for 2024 reportedly reached 590.9 billion TRY (12.96 billion USD).
 - Hurriyet Daily News reported that 233,000 illegal betting/gambling sites were shut down in 2024, a significant increase from 168,000 the previous year.
 - Turkiye Today, citing field research, reported that illegal betting/gambling has reached "1 in 6 people" in Turkey, with a rate of 15.4% in the 18-24 age group and 13%+ in the 25-34 group.
 
@@ -258,7 +256,7 @@ Current x402 upgrade sequence:
 
 1. Parallel paid context pass: BlockRun market/trade/orderbook/candlestick services, Tavily, Exa, Parallel, AIsa Polymarket, X/social, and CoinGecko when relevant.
 2. Deep research pass: Perplexity Deep Research runs after the first paid context pass.
-3. ROMA-style review: paid evidence is reviewed for source quality, relevance, risk, and policy constraints.
+3. ROMA review: paid evidence is reviewed for source quality, relevance, risk, and policy constraints.
 4. CryptoAnalystBench quality control: runs only when the market is crypto/Web3/stablecoin/onchain-related.
 5. Final answer: the upgraded analysis is shown next to the preserved base-layer result.
 

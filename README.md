@@ -5,7 +5,14 @@ Samsun Market Intel is a prediction-market intelligence product built for the Ar
 - **Prediction Market Trader Intelligence:** Analyzes active markets on Polymarket using news, data, social signals, holder flow, orderbook data, and source reliability to produce better "bet / avoid / watch" decisions.
 - **Prediction Market Verticals:** Surfaces new market ideas from local agendas in countries like Turkey that are underrepresented on global prediction markets, and turns them into proposals with measurable resolution rules.
 
-In short: the user provides a Polymarket link, a market question, or a news event. Samsun Market Intel combines Circle x402 services, OpenDeepSearch research, a registered sources layer, X/social signals, a risk gate, and model analysis. The result explains which outcome makes more sense, what evidence is missing, where the market price looks wrong, how to size a position if one is to be opened, and when to wait instead.
+In short: the user provides a Polymarket link, a market question, or a news event. Samsun Market Intel now runs as a two-layer analysis product:
+
+1. **Base layer:** OpenDeepSearch -> ROMA-style review -> CryptoAnalystBench quality check when relevant -> answer.
+2. **x402 upgrade layer:** Circle x402 paid services run as a separate evidence pass. BlockRun, Tavily, Exa/Parallel, market-data, social, and other relevant services run first; Perplexity Deep Research runs after that; the combined paid evidence then goes into ROMA-style review and optional CryptoAnalystBench quality control.
+
+The x402 layer does **not** send paid results back into OpenDeepSearch. OpenDeepSearch is the base research layer; x402 is the paid evidence upgrade layer.
+
+The result explains which outcome makes more sense, what evidence is missing, where the market price looks wrong, how to size a position if one is to be opened, and when to wait instead.
 
 The product does not place bets automatically. The agent only prepares a manual trade intent; no wallet transaction or bet execution happens without user approval. If desired, this intent can be recorded as a proof/receipt on Arc Testnet.
 
@@ -18,7 +25,7 @@ Alpha in prediction markets usually comes from information asymmetry. But lookin
 - Correct outcome selection in multi-outcome markets.
 - How fresh the news is and how reliable the sources are.
 - X/social hype level.
-- Polymarket trade flow, holder concentration, orderbook, and candlestick signals.
+- Polymarket trade flow, holder concentration, orderbook, and candlestick signals when the paid endpoint returns usable market/outcome identifiers.
 - Resolution wording and oracle risk.
 - Risk of manipulation, one-sided flow, or low liquidity.
 - Kelly-style position sizing.
@@ -26,13 +33,27 @@ Alpha in prediction markets usually comes from information asymmetry. But lookin
 
 Samsun Market Intel brings all these layers together in a single research and decision screen.
 
+## What Is Live vs Conditional?
+
+Some signals are always available; others depend on whether the paid provider returns exact market/outcome identifiers.
+
+| Feature | Current status |
+| --- | --- |
+| Base OpenDeepSearch analysis | Live. Runs before x402 and stays as the baseline. |
+| ROMA-style review | Live as a structured reviewer pattern inside the prompt and UI flow. |
+| CryptoAnalystBench quality check | Live for crypto/Web3/stablecoin/onchain-related markets; skipped elsewhere. |
+| Kelly-style sizing | Live deterministic sizing when market quote, fair probability, confidence, and risk are available. If the edge is missing or below threshold, stake is `$0`. |
+| Holder concentration | Live only when x402 top-holder endpoints return exact holder rows. Otherwise the UI marks "No rows" or "Skipped." |
+| Orderbook/candlestick signals | Live only when the market exposes token/condition identifiers accepted by the paid endpoint. Otherwise treated as a data gap. |
+| X engagement | Live through paid social search when recent dated posts are returned. It is sentiment/context, not proof. |
+
 ## Product Scope
 
 | Hackathon area | How the product addresses it |
 | --- | --- |
 | Finding +EV bets | Analyzes existing Polymarket markets, produces fair probability, calculates edge and sizing. |
 | Source reliability | Separately weights OpenDeepSearch, registered sources, X/social, and paid x402 results. |
-| Manipulation / flow | Feeds holder, trade, orderbook, candlestick, and X engagement signals into the risk gate. |
+| Manipulation / flow | Feeds real returned holder, trade, orderbook, candlestick, and X engagement signals into the risk gate; if a paid endpoint cannot return exact rows, the UI marks that as a data gap instead of inventing evidence. |
 | Manual execution | Watch / avoid / side intent is staged; there is no automated trading. |
 | New verticals | Scans Turkey's news agenda for marketable events. |
 | Market creation | Produces question text, resolution criteria, oracle sources, and a proposal draft. |
@@ -75,12 +96,13 @@ Flow:
 1. User pastes a Polymarket link.
 2. The system loads the market title, outcome structure, visual, and available information.
 3. User manually triggers Analyze.
-4. The initial analysis is done via OpenDeepSearch + registered sources + model layer.
-5. If desired, the user calls paid data with "Upgrade with Circle x402 research."
-6. x402 results are added to the same analysis; the previous analysis is not lost.
-7. The agent updates its decision: bet, avoid, watch, or side-specific lean.
-8. The user can manually stage an intent.
-9. An Arc proof/receipt can be created.
+4. The initial analysis is done via the base layer: OpenDeepSearch + registered sources + ROMA-style review + model layer.
+5. If desired, the user calls paid data with "Upgrade with Circle x402 research." The UI shows the approved cap and expected service-max cost before the user approves the paid pass.
+6. x402 results are processed in a separate upgrade layer: BlockRun/Tavily/Exa/Parallel/market-data/social services first, Perplexity Deep Research second, then ROMA-style review and optional CryptoAnalystBench.
+7. The previous base analysis is preserved and compared against the x402-upgraded analysis.
+8. The agent updates its decision: bet, avoid, watch, or side-specific lean.
+9. The user can manually stage an intent.
+10. An Arc proof/receipt can be created.
 
 ### Market Ideas
 
@@ -225,11 +247,20 @@ Service types usable via x402 in this project:
 - AIsa X advanced/community search
 - AIsa CoinGecko categories
 - Tavily search
+- Exa web search
 - Perplexity Sonar
 - Perplexity Deep Research
 - Parallel web search
 
-Each service result is not dumped raw into the final response. The product first checks data usability, provider gaps, data staleness, and relevance.
+Each service result is not dumped raw into the final response. The product first checks data usability, provider gaps, data staleness, and relevance. If holder concentration, orderbook, candlestick, or matching-market endpoints do not return usable data for the exact market/outcome, the UI reports that as "skipped" or "data gap." The agent is not allowed to hallucinate those rows.
+
+Current x402 upgrade sequence:
+
+1. Parallel paid context pass: BlockRun market/trade/orderbook/candlestick services, Tavily, Exa, Parallel, AIsa Polymarket, X/social, and CoinGecko when relevant.
+2. Deep research pass: Perplexity Deep Research runs after the first paid context pass.
+3. ROMA-style review: paid evidence is reviewed for source quality, relevance, risk, and policy constraints.
+4. CryptoAnalystBench quality control: runs only when the market is crypto/Web3/stablecoin/onchain-related.
+5. Final answer: the upgraded analysis is shown next to the preserved base-layer result.
 
 ### Arc Testnet
 
@@ -255,10 +286,9 @@ In Samsun Market Intel, OpenDeepSearch:
 - finds recent news, official sources, and pages relevant to the market,
 - uses Jina reranking to surface sources that are genuinely close to the topic, not just keyword matches,
 - helps understand the resolution conditions of the market question,
-- provides the base evidence layer before x402 paid data arrives,
-- compares paid data against web context once x402 results come in.
+- provides the base evidence layer before x402 paid data arrives.
 
-Why does this matter? In prediction market analysis, timing is critical. A stale news article, the wrong market page, or an irrelevant source can easily mislead the agent. The OpenDeepSearch layer therefore acts as both a freshness and a relevance filter.
+Why does this matter? In prediction market analysis, timing is critical. A stale news article, the wrong market page, or an irrelevant source can easily mislead the agent. The OpenDeepSearch layer therefore acts as the first-pass freshness and relevance filter. When the user upgrades with x402, paid results are **not** routed back through OpenDeepSearch; they go into the separate x402 upgrade layer.
 
 Source: [sentient-agi/OpenDeepSearch](https://github.com/sentient-agi/OpenDeepSearch)
 
@@ -322,13 +352,14 @@ Proof:
 
 ## Average Analysis Cost
 
-Cost varies depending on the selected service bundle, x402 provider prices, and model token usage. Since the project is still under active development, costs can be somewhat high and analysis speed may be slow.
+Cost varies depending on the selected service bundle, x402 provider prices, and model token usage. The UI shows the x402 approved cap before the user starts the paid pass.
 
 Observed practical ranges:
 
-- Basic analysis: OpenRouter + Serper/Jina cost.
-- x402 upgrade: mostly around `0.30` in tests.
-- Larger x402 bundle: cost increases if more paid services are called.
+- Base analysis: OpenRouter + Serper/Jina. This is usually a small model/search cost and does not use x402.
+- x402 upgrade approved cap: `6.00 USDC`.
+- Current service-max estimate for the configured paid bundle: about `4.95 USDC`.
+- Recent local demo receipts that included parseable x402 payment amounts ranged roughly from `$0.07` to `$0.40` per upgrade, with an average around `$0.16` across local cached runs. This is lower than the approved cap because providers often charge below the max amount and some exact-market endpoints are skipped when the market does not expose the needed condition/token identifiers.
 
 x402 calls in the product run with manual approval. Spending limits, provider allowlists, and service bundles are managed via backend config.
 

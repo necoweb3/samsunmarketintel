@@ -61,6 +61,7 @@ export type AgentRunRecord = {
   sentientContext?: SentientRunContext;
   marketResearch?: AgentMarketResearch;
   paidResearch?: LiveX402ResearchSummary;
+  baselineAnalysis?: LiveAgentModelAnalysis;
   modelAnalysis?: LiveAgentModelAnalysis;
   cryptoBench?: CryptoAnalystBenchEvaluation;
   sources: string[];

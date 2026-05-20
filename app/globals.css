@@ -2468,6 +2468,113 @@
   line-height: 1.35;
 }
 
+.mi-x402Estimate,
+.mi-layerComparison {
+  display: grid;
+  gap: 12px;
+  padding: 13px;
+  background: linear-gradient(180deg, #fff8f9, #ffffff);
+  border: 1px solid #ffd0d7;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(157, 0, 20, 0.06);
+}
+
+.mi-x402Estimate.compact,
+.mi-layerComparison.compact {
+  padding: 11px;
+}
+
+.mi-x402Estimate > div:first-child,
+.mi-layerComparisonHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mi-x402Estimate strong,
+.mi-layerComparison strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.mi-x402Estimate p,
+.mi-layerComparison p {
+  margin: 3px 0 0;
+  color: #4e647f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mi-x402EstimateGrid,
+.mi-layerComparisonGrid,
+.mi-layerDeltaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mi-layerComparisonGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mi-x402EstimateGrid span,
+.mi-layerComparisonGrid > div,
+.mi-layerDeltaGrid span,
+.mi-comparisonSlot {
+  min-width: 0;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #ffd8de;
+  border-radius: 10px;
+}
+
+.mi-x402EstimateGrid small,
+.mi-layerComparisonGrid span,
+.mi-layerComparisonHeader span {
+  display: block;
+  color: #8b3f4b;
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.mi-x402EstimateGrid b,
+.mi-layerComparisonGrid strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--accent-deep);
+  font-size: 13px;
+}
+
+.mi-layerDeltaGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mi-layerDeltaGrid span {
+  color: #415b76;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mi-comparisonSlot {
+  background:
+    linear-gradient(135deg, rgba(255, 31, 55, 0.08), rgba(255, 255, 255, 0.92)),
+    repeating-linear-gradient(45deg, rgba(157, 0, 20, 0.06) 0 8px, transparent 8px 16px);
+}
+
+.mi-comparisonSlot p {
+  max-width: 620px;
+}
+
+@media (max-width: 760px) {
+  .mi-x402EstimateGrid,
+  .mi-layerComparisonGrid,
+  .mi-layerDeltaGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mi-x402Upgrade {
   justify-self: start;
   display: inline-flex;

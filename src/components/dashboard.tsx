@@ -45,6 +45,8 @@ import {
 import { estimatePositionSize } from "@/src/product/positionSizing";
 
 const LIVE_X402_RESEARCH_BUDGET_USDC = 6;
+const LIVE_X402_BUNDLE_MAX_USDC = 4.95;
+const LIVE_X402_OBSERVED_RANGE = "$0.07-$0.40";
 
 export type PageKey = "chat" | "markets" | "ideas" | "sources" | "activity" | "system";
 
@@ -168,6 +170,37 @@ type DeepSearchState = {
   } | null;
 };
 
+type AgentRunModelAnalysis = {
+  status: "ok" | "skipped" | "error";
+  provider: string;
+  model: string;
+  recommendation: "BET_YES" | "BET_NO" | "WAIT" | "DO_NOT_BET" | "RESEARCH_MORE";
+  riskGate: "open" | "review" | "blocked";
+  confidence: number;
+  thesis: string;
+  summary: string;
+  keyDrivers: string[];
+  missingEvidence: string[];
+  sourceCredibilityNotes: string[];
+  policyNotes: string[];
+  tradePlan: {
+    status: "trade" | "watch" | "avoid" | "research_more";
+    targetOutcome: string | null;
+    side: "YES" | "NO" | "NONE";
+    marketQuote: string | null;
+    fairProbability: number | null;
+    edge: number | null;
+    confidence: number | null;
+    rationale: string;
+    alternative: string | null;
+    hedgeOrExit: string | null;
+  } | null;
+  usage: {
+    totalTokens: number | null;
+  } | null;
+  error?: string;
+};
+
 type AgentRunRecord = {
   id: string;
   marketId: string;
@@ -222,10 +255,12 @@ type AgentRunRecord = {
     query: string;
     maxTotalUsdc: number;
     estimatedMaxSpendUsdc: number;
+    actualPaidUsdc: number | null;
     services: Array<{
       id: string;
       name: string;
       provider: string;
+      phase?: "parallel_context" | "deep_research";
       status: "ok" | "error" | "skipped";
       maxAmountUsdc: number;
       purpose: string;
@@ -247,36 +282,8 @@ type AgentRunRecord = {
     savedTo: string | null;
     createdAt: string;
   };
-  modelAnalysis?: {
-    status: "ok" | "skipped" | "error";
-    provider: string;
-    model: string;
-    recommendation: "BET_YES" | "BET_NO" | "WAIT" | "DO_NOT_BET" | "RESEARCH_MORE";
-    riskGate: "open" | "review" | "blocked";
-    confidence: number;
-    thesis: string;
-    summary: string;
-    keyDrivers: string[];
-    missingEvidence: string[];
-    sourceCredibilityNotes: string[];
-    policyNotes: string[];
-    tradePlan: {
-      status: "trade" | "watch" | "avoid" | "research_more";
-      targetOutcome: string | null;
-      side: "YES" | "NO" | "NONE";
-      marketQuote: string | null;
-      fairProbability: number | null;
-      edge: number | null;
-      confidence: number | null;
-      rationale: string;
-      alternative: string | null;
-      hedgeOrExit: string | null;
-    } | null;
-    usage: {
-      totalTokens: number | null;
-    } | null;
-    error?: string;
-  };
+  baselineAnalysis?: AgentRunModelAnalysis;
+  modelAnalysis?: AgentRunModelAnalysis;
   cryptoBench?: {
     status: "active" | "skipped";
     mode: string;
@@ -877,6 +884,10 @@ const plannedPaidResearchServices = [
   {
     label: "AIsa Polymarket price/orderbook",
     detail: "Cross-checking token price and book depth through a second market-data provider.",
+  },
+  {
+    label: "Exa web search",
+    detail: "Running AI-native web search in parallel with Tavily and BlockRun.",
   },
   {
     label: "Parallel web search",
@@ -1814,7 +1825,6 @@ export function Dashboard({
               "AIsa Polymarket",
               "BlockRun X/Web/News",
               "BlockRun Polymarket",
-              "OpenDeepSearch",
             ]),
           ],
           originalUrl: run.originalUrl,
@@ -1869,7 +1879,7 @@ export function Dashboard({
         {
           id: `agent-paid-${Date.now()}`,
           role: "agent",
-          text: `Paid research upgrade - ${formatActionLabel(paidRun.modelAnalysis?.recommendation ?? paidRun.action)} / ${paidRun.modelAnalysis?.riskGate ?? paidRun.riskGate}: Circle x402 services finished, and the new evidence was re-ingested by the research stack.`,
+          text: `Paid research upgrade - ${formatActionLabel(paidRun.modelAnalysis?.recommendation ?? paidRun.action)} / ${paidRun.modelAnalysis?.riskGate ?? paidRun.riskGate}: Circle x402 services finished, then the paid evidence was reviewed by the upgrade layer.`,
           run: paidRun,
           trace,
           createdAt: new Date().toISOString(),
@@ -2662,11 +2672,14 @@ function ChatMessageBubble({
           <MarketFlowSnapshot run={run} />
           <SocialEngagementSnapshot run={run} />
           <EvidenceDrawer run={run} />
+          <LayerComparisonPanel run={run} />
 
             <section>
               <strong>Research path</strong>
               <p>
-              Market data, web research, source scoring, and safety review are combined before any manual intent can be staged.
+              {hasPaidResearch
+                ? "Base research is preserved for comparison. The x402 upgrade uses paid services directly, then runs the source, risk, policy, and quality review without sending paid results back through OpenDeepSearch."
+                : "OpenDeepSearch, source scoring, ROMA-style review, and safety checks are combined before any manual intent can be staged."}
             </p>
             {run.paidResearch && paidServicesForRun.length > 0 ? (
               <details className="mi-details">
@@ -2725,15 +2738,18 @@ function ChatMessageBubble({
                 </div>
               </div>
             ) : (
+              <>
+              <X402CostEstimate />
               <button
                 type="button"
                 className="mi-x402Upgrade"
                 onClick={() => onRunPaidResearch(run)}
-                title={`Spend up to ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC through Circle x402 marketplace services, then re-run the research analysis.`}
+                title={`Spend up to ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC through Circle x402 marketplace services, then refresh the decision without re-running OpenDeepSearch.`}
               >
                 <Sparkles size={14} />
                 Upgrade with Circle x402 research
               </button>
+              </>
             )}
             {hasPaidResearch ? <X402PaymentRecords run={run} /> : null}
             {hasPaidResearch ? <PaidResearchImpactSummary run={run} /> : null}
@@ -3116,6 +3132,86 @@ function PaidResearchImpactSummary({ run, compact = false }: { run: AgentRunReco
   );
 }
 
+function X402CostEstimate({ compact = false }: { compact?: boolean }) {
+  return (
+    <section className={compact ? "mi-x402Estimate compact" : "mi-x402Estimate"}>
+      <div>
+        <strong>x402 upgrade estimate</strong>
+        <p>
+          Paid context runs BlockRun, Tavily, Exa/Parallel, market-data and social services first; Perplexity Deep Research runs after that evidence pass.
+        </p>
+      </div>
+      <div className="mi-x402EstimateGrid">
+        <span>
+          <small>Approved cap</small>
+          <b>{LIVE_X402_RESEARCH_BUDGET_USDC.toFixed(2)} USDC</b>
+        </span>
+        <span>
+          <small>Service max</small>
+          <b>~{LIVE_X402_BUNDLE_MAX_USDC.toFixed(2)} USDC</b>
+        </span>
+        <span>
+          <small>Observed demo receipts</small>
+          <b>{LIVE_X402_OBSERVED_RANGE} USDC</b>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
+  if (!run.paidResearch) return null;
+
+  const base = run.baselineAnalysis;
+  const upgraded = run.modelAnalysis;
+  const services = visiblePaidResearchServices(run);
+  const ok = services.filter((service) => service.status === "ok").length;
+  const deepOk = services.some(
+    (service) => service.phase === "deep_research" && service.status === "ok",
+  );
+
+  return (
+    <section className={compact ? "mi-layerComparison compact" : "mi-layerComparison"}>
+      <div className="mi-layerComparisonHeader">
+        <div>
+          <strong>Base vs x402 upgrade</strong>
+          <p>Use this section in the demo to show why the paid layer is more than a Google-style answer.</p>
+        </div>
+        <span>{typeof run.paidResearch.actualPaidUsdc === "number" ? `$${run.paidResearch.actualPaidUsdc.toFixed(4)} paid` : "receipt tracked"}</span>
+      </div>
+
+      <div className="mi-layerComparisonGrid">
+        <div>
+          <span>Base layer</span>
+          <strong>{base ? formatActionLabel(base.recommendation) : formatActionLabel(run.action)}</strong>
+          <p>
+            OpenDeepSearch, registered sources, ROMA-style review, and optional CryptoAnalystBench check.
+          </p>
+          <small>{base ? `${formatPercent(base.confidence)} confidence` : `${run.marketResearch?.sourceLinks.length ?? 0} source links`}</small>
+        </div>
+        <div>
+          <span>x402 upgrade</span>
+          <strong>{upgraded ? formatActionLabel(upgraded.recommendation) : formatActionLabel(run.action)}</strong>
+          <p>
+            {ok}/{services.length} paid services returned usable data{deepOk ? ", including Deep Research" : ""}.
+          </p>
+          <small>{upgraded ? `${formatPercent(upgraded.confidence)} confidence` : "review-first"}</small>
+        </div>
+      </div>
+
+      <div className="mi-layerDeltaGrid">
+        <span>New paid signals: market/orderbook data, holder-flow when available, recent X engagement, and cited paid research.</span>
+        <span>Execution remains manual: x402 can improve confidence and side selection, but it cannot place a bet by itself.</span>
+      </div>
+
+      <div className="mi-comparisonSlot">
+        <strong>Comparison visual slot</strong>
+        <p>Add the demo image here: base answer on the left, x402-upgraded answer on the right, with changed evidence highlighted.</p>
+      </div>
+    </section>
+  );
+}
+
 function X402PaymentRecords({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
   const records = visiblePaidResearchServices(run)
     .flatMap((service) => (service.payment ? [{ service, payment: service.payment }] : []))
@@ -3341,6 +3437,8 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
 
   const ok = services.filter((service) => service.status === "ok").length;
   const errors = services.filter((service) => service.status === "error").length;
+  const actualPaid =
+    typeof run.paidResearch.actualPaidUsdc === "number" ? run.paidResearch.actualPaidUsdc : null;
   const beforeDecision = formatActionLabel(run.action);
   const afterDecision = formatActionLabel(run.modelAnalysis?.recommendation ?? run.action);
   const confidenceBefore = run.confidence;
@@ -3362,11 +3460,11 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
     },
     {
       label: "Paid coverage",
-      value: `${ok}/${services.length} usable`,
+      value: actualPaid !== null ? `$${actualPaid.toFixed(4)} paid` : `${ok}/${services.length} usable`,
       detail:
         errors > 0
-          ? `${errors} data gap${errors === 1 ? "" : "s"} kept as missing evidence, not as proof.`
-          : "Paid services returned without visible data gaps.",
+          ? `${ok}/${services.length} usable; ${errors} data gap${errors === 1 ? "" : "s"} kept as missing evidence, not as proof.`
+          : `${ok}/${services.length} paid services returned without visible data gaps.`,
     },
     {
       label: "Holder flow",
@@ -4280,6 +4378,7 @@ function MarketsPage({
           {selectedRun ? <MarketFlowSnapshot run={selectedRun} compact /> : null}
           {selectedRun ? <SocialEngagementSnapshot run={selectedRun} compact /> : null}
           {selectedRun ? <EvidenceDrawer run={selectedRun} /> : null}
+          {selectedRun ? <LayerComparisonPanel run={selectedRun} compact /> : null}
 
           <section className="mi-reportBlock">
             <div className="mi-blockHeader">
@@ -4303,16 +4402,19 @@ function MarketsPage({
                 </div>
               </div>
             ) : selectedRun ? (
+              <>
+              <X402CostEstimate compact />
               <button
                 type="button"
                 className="mi-x402Upgrade"
                 onClick={() => onRunPaidResearch(selectedRun)}
                 disabled={runState === "running"}
-                title={`Spend up to ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC through Circle x402 marketplace services, then refresh the decision.`}
+                title={`Spend up to ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC through Circle x402 marketplace services, then refresh the decision without re-running OpenDeepSearch.`}
               >
                 <Sparkles size={14} />
                 Upgrade with Circle x402
               </button>
+              </>
             ) : null}
             {selectedRun?.paidResearch ? <X402PaymentRecords run={selectedRun} compact /> : null}
             {selectedRun?.paidResearch ? <PaidResearchImpactSummary run={selectedRun} compact /> : null}
@@ -5522,19 +5624,10 @@ function buildAgentTrace(
 ): AgentTraceStep[] {
   const completed = state === "complete";
   const blocked = state === "blocked";
-  const paidServices = run ? visiblePaidResearchServices(run) : [];
-  const paidOk = paidServices.filter((service) => service.status === "ok").length;
   const steps: AgentTraceStep[] = [
     {
       label: "Market context",
       detail: "Reading the pasted market or prompt and preparing a clean research brief.",
-      status: completed ? "done" : blocked ? "blocked" : "running",
-    },
-    {
-      label: "Circle x402 layer",
-      detail: run?.paidResearch
-        ? `Paid data pass used ${paidServices.length === 0 ? "no visible" : `${paidOk}/${paidServices.length}`} services.`
-        : "Checking available market, flow, and paid-data context. Live spend waits for your approval.",
       status: completed ? "done" : blocked ? "blocked" : "running",
     },
     {
@@ -5626,14 +5719,14 @@ function buildPaidResearchTrace(
   return [
     {
       label: "Human approval",
-      detail: `Live paid research was approved with a ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC cap.`,
+      detail: `Live paid research was approved with a ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC cap; expected service max is ~${LIVE_X402_BUNDLE_MAX_USDC.toFixed(2)} USDC.`,
       status: completed ? "done" : blocked ? "blocked" : "done",
     },
     ...serviceSteps,
     {
       label: "Research ingestion",
       detail:
-        "Merging paid results with web research and registered sources.",
+        "Sending paid x402 evidence into the ROMA-style source, risk, policy, and quality review. OpenDeepSearch is not re-run in this upgrade layer.",
       status: completed ? "done" : blocked ? "blocked" : "queued",
     },
     {

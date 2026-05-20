@@ -11,7 +11,6 @@ import { evaluateCryptoAnalystBench } from "@/src/product/cryptoAnalystBench";
 import { readIntentLedger } from "@/src/product/intentLedger";
 import { buildIntegritySnapshot } from "@/src/product/integrityAnalysis";
 import { runLiveX402Research } from "@/src/product/liveX402Research";
-import { runOpenDeepSearch } from "@/src/product/openDeepSearchRuntime";
 import { buildResearchSnapshot } from "@/src/product/researchAnalysis";
 import { buildSentientRunContext } from "@/src/product/sentientActivation";
 import { readSourceRegistry } from "@/src/product/sourceRegistry";
@@ -58,16 +57,12 @@ export async function POST(request: Request) {
 
   const input = parsed.data;
   const query = buildPaidResearchQuery(input);
-  const [paidResearch, marketResearch, tradePayload, researchPayload, sourceRegistry, intents, existingRuns] =
+  const [paidResearch, tradePayload, researchPayload, sourceRegistry, intents, existingRuns] =
     await Promise.all([
       runLiveX402Research({
         marketId: input.marketId,
         query,
         maxTotalUsdc: input.maxTotalUsdc,
-      }),
-      runOpenDeepSearch({
-        query,
-        maxSources: 5,
       }),
       readJson(TRADES_CACHE),
       readJson(RESEARCH_CACHE),
@@ -88,10 +83,12 @@ export async function POST(request: Request) {
     input,
     run: deterministicRun,
     research,
-    marketResearch,
+    marketResearch: null,
     paidResearch,
     topAlert: integrity?.alerts[0] ?? null,
     sentientContext,
+    analysisLayer: "x402_upgrade",
+    baselineAnalysis: previousRun?.modelAnalysis ?? null,
   });
   const modelAnalysis = preservePreviousAnalysisOnRefreshGap(
     refreshedModelAnalysis,
@@ -102,24 +99,15 @@ export async function POST(request: Request) {
     input,
     modelAnalysis,
     research,
-    marketResearch,
+    marketResearch: null,
     paidResearch,
   });
   const run = {
     ...deterministicRun,
     sentientContext,
-    marketResearch: {
-      status: marketResearch.status,
-      query: marketResearch.query,
-      answer: marketResearch.answer,
-      durationMs: marketResearch.durationMs,
-      provider: marketResearch.config.search.label,
-      reranker: marketResearch.config.reranker.label,
-      model: marketResearch.config.model.name,
-      sourceLinks: marketResearch.sources?.map((source) => source.url) ?? [],
-      error: marketResearch.error,
-    },
+    marketResearch: previousRun?.marketResearch,
     paidResearch,
+    baselineAnalysis: previousRun?.modelAnalysis,
     modelAnalysis,
     cryptoBench,
   };

@@ -36,6 +36,7 @@ export type LiveX402ServiceResult = {
   id: LiveX402ServiceId;
   name: string;
   provider: "BlockRun.AI" | "AIsa API" | "Exa" | "Parallel";
+  phase: "parallel_context" | "deep_research";
   endpoint: string;
   status: "ok" | "error" | "skipped";
   maxAmountUsdc: number;
@@ -63,6 +64,7 @@ export type LiveX402ResearchSummary = {
   query: string;
   maxTotalUsdc: number;
   estimatedMaxSpendUsdc: number;
+  actualPaidUsdc: number | null;
   services: LiveX402ServiceResult[];
   savedTo: string | null;
   createdAt: string;
@@ -79,6 +81,7 @@ type ServicePlan = {
   id: LiveX402ServiceId;
   name: string;
   provider: LiveX402ServiceResult["provider"];
+  phase?: LiveX402ServiceResult["phase"];
   endpoint: string | ((query: string) => string | null);
   method: "GET" | "POST";
   maxAmountUsdc: number;
@@ -209,6 +212,25 @@ const SERVICE_PLAN: ServicePlan[] = [
     }),
   },
   {
+    id: "exa-web-search",
+    name: "Exa web search",
+    provider: "Exa",
+    endpoint: "https://api.exa.ai/search",
+    method: "POST",
+    chain: "BASE",
+    maxAmountUsdc: 0.05,
+    purpose: "Run AI-native web search to catch sources that Tavily and BlockRun may miss.",
+    body: (query) => ({
+      query: compactSearchQuery(query),
+      type: "deep",
+      numResults: 8,
+      contents: {
+        summary: true,
+        highlights: true,
+      },
+    }),
+  },
+  {
     id: "parallel-web-search",
     name: "Parallel web search",
     provider: "Parallel",
@@ -279,6 +301,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     id: "aisa-perplexity-deep-research",
     name: "Perplexity Deep Research",
     provider: "AIsa API",
+    phase: "deep_research",
     endpoint: "https://api.aisa.one/apis/v2/perplexity/sonar-deep-research",
     method: "POST",
     maxAmountUsdc: 2,
@@ -362,10 +385,12 @@ export async function runLiveX402Research({
       query: enrichedQuery,
       maxTotalUsdc,
       estimatedMaxSpendUsdc: 0,
+      actualPaidUsdc: null,
       services: SERVICE_PLAN.map((service) => ({
         id: service.id,
         name: service.name,
         provider: service.provider,
+        phase: servicePhase(service),
         endpoint: typeof service.endpoint === "string" ? service.endpoint : "market-specific endpoint",
         status: "skipped",
         maxAmountUsdc: service.maxAmountUsdc,
@@ -379,45 +404,87 @@ export async function runLiveX402Research({
   }
 
   let spentBudget = 0;
-  const services: LiveX402ServiceResult[] = [];
+  const plannedServices: Array<
+    | { type: "ready"; service: ServicePlan; endpoint: string }
+    | { type: "result"; service: ServicePlan; result: LiveX402ServiceResult }
+  > = [];
 
   for (const service of SERVICE_PLAN) {
     const endpoint = buildServiceUrl(service, enrichedQuery);
 
     if (!endpoint) {
-      services.push({
-        id: service.id,
-        name: service.name,
-        provider: service.provider,
-        endpoint: "market-specific endpoint",
-        status: "skipped",
-        maxAmountUsdc: service.maxAmountUsdc,
-        purpose: service.purpose,
-        rawText: null,
-        summary: "Skipped because this market did not provide the condition ID required by the service.",
+      plannedServices.push({
+        type: "result",
+        service,
+        result: {
+          id: service.id,
+          name: service.name,
+          provider: service.provider,
+          phase: servicePhase(service),
+          endpoint: "market-specific endpoint",
+          status: "skipped",
+          maxAmountUsdc: service.maxAmountUsdc,
+          purpose: service.purpose,
+          rawText: null,
+          summary: "Skipped because this market did not provide the condition ID required by the service.",
+        },
       });
       continue;
     }
 
     if (spentBudget + service.maxAmountUsdc > maxTotalUsdc) {
-      services.push({
-        id: service.id,
-        name: service.name,
-        provider: service.provider,
-        endpoint,
-        status: "skipped",
-        maxAmountUsdc: service.maxAmountUsdc,
-        purpose: service.purpose,
-        rawText: null,
-        summary: `Skipped to keep the approved budget under ${maxTotalUsdc} USDC.`,
+      plannedServices.push({
+        type: "result",
+        service,
+        result: {
+          id: service.id,
+          name: service.name,
+          provider: service.provider,
+          phase: servicePhase(service),
+          endpoint,
+          status: "skipped",
+          maxAmountUsdc: service.maxAmountUsdc,
+          purpose: service.purpose,
+          rawText: null,
+          summary: `Skipped to keep the approved budget under ${maxTotalUsdc} USDC.`,
+        },
       });
       continue;
     }
 
     spentBudget += service.maxAmountUsdc;
-    services.push(await payService({ service, query: enrichedQuery, endpoint, address, chain }));
+    plannedServices.push({ type: "ready", service, endpoint });
   }
 
+  const resultByServiceId = new Map<LiveX402ServiceId, LiveX402ServiceResult>();
+  for (const planned of plannedServices) {
+    if (planned.type === "result") resultByServiceId.set(planned.service.id, planned.result);
+  }
+
+  const payableServices = plannedServices.filter(
+    (planned): planned is { type: "ready"; service: ServicePlan; endpoint: string } =>
+      planned.type === "ready",
+  );
+  const parallelServices = payableServices.filter((planned) => servicePhase(planned.service) === "parallel_context");
+  const deepResearchServices = payableServices.filter((planned) => servicePhase(planned.service) === "deep_research");
+
+  const parallelResults = await Promise.all(
+    parallelServices.map((planned) =>
+      payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
+    ),
+  );
+  for (const result of parallelResults) resultByServiceId.set(result.id, result);
+
+  const deepResults = await Promise.all(
+    deepResearchServices.map((planned) =>
+      payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
+    ),
+  );
+  for (const result of deepResults) resultByServiceId.set(result.id, result);
+
+  const services = plannedServices
+    .map((planned) => resultByServiceId.get(planned.service.id))
+    .filter(Boolean) as LiveX402ServiceResult[];
   const status = services.every((service) => service.status === "ok")
     ? "ok"
     : services.some((service) => service.status === "ok")
@@ -429,6 +496,7 @@ export async function runLiveX402Research({
     query: enrichedQuery,
     maxTotalUsdc,
     estimatedMaxSpendUsdc: Number(spentBudget.toFixed(4)),
+    actualPaidUsdc: sumActualPaidUsdc(services),
     services,
     savedTo,
     createdAt,
@@ -497,6 +565,7 @@ async function payService({
       id: service.id,
       name: service.name,
       provider: service.provider,
+      phase: servicePhase(service),
       endpoint,
       status: payloadError ? "error" : "ok",
       maxAmountUsdc: service.maxAmountUsdc,
@@ -519,6 +588,7 @@ async function payService({
       id: service.id,
       name: service.name,
       provider: service.provider,
+      phase: servicePhase(service),
       endpoint,
       status: "error",
       maxAmountUsdc: service.maxAmountUsdc,
@@ -529,6 +599,26 @@ async function payService({
       ...(payment ? { payment } : {}),
     };
   }
+}
+
+function servicePhase(service: ServicePlan): LiveX402ServiceResult["phase"] {
+  return service.phase ?? "parallel_context";
+}
+
+function sumActualPaidUsdc(services: LiveX402ServiceResult[]) {
+  const amounts = services
+    .map((service) => parsePaymentAmountUsdc(service.payment?.amount ?? null))
+    .filter((amount): amount is number => amount !== null);
+
+  if (amounts.length === 0) return null;
+  return Number(amounts.reduce((sum, amount) => sum + amount, 0).toFixed(4));
+}
+
+function parsePaymentAmountUsdc(value: string | null) {
+  if (!value) return null;
+  const match = value.match(/([0-9]+(?:\.[0-9]+)?)/);
+  if (!match) return null;
+  return Number.parseFloat(match[1]);
 }
 
 function extractX402PaymentRecord(rawText: string): X402PaymentRecord | null {

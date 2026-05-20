@@ -81,6 +81,8 @@ export async function requestLiveAgentModelAnalysis({
   paidResearch,
   topAlert,
   sentientContext,
+  analysisLayer = paidResearch ? "x402_upgrade" : "base",
+  baselineAnalysis = null,
 }: {
   input: AgentRunInput;
   run: AgentRunRecord;
@@ -89,6 +91,8 @@ export async function requestLiveAgentModelAnalysis({
   paidResearch?: LiveX402ResearchSummary | null;
   topAlert: FlowAlert | null;
   sentientContext: SentientRunContext;
+  analysisLayer?: "base" | "x402_upgrade";
+  baselineAnalysis?: LiveAgentModelAnalysis | null;
 }): Promise<LiveAgentModelAnalysis> {
   const config = readPrimaryModelConfig();
 
@@ -151,6 +155,8 @@ export async function requestLiveAgentModelAnalysis({
             paidResearch,
             topAlert,
             sentientContext,
+            analysisLayer,
+            baselineAnalysis,
           }),
         },
       ],
@@ -198,6 +204,8 @@ function buildModelPrompt({
   paidResearch,
   topAlert,
   sentientContext,
+  analysisLayer,
+  baselineAnalysis,
 }: {
   input: AgentRunInput;
   run: AgentRunRecord;
@@ -206,6 +214,8 @@ function buildModelPrompt({
   paidResearch?: LiveX402ResearchSummary | null;
   topAlert: FlowAlert | null;
   sentientContext: SentientRunContext;
+  analysisLayer: "base" | "x402_upgrade";
+  baselineAnalysis: LiveAgentModelAnalysis | null;
 }) {
   const relevantCachedResearch = research && isResearchRelevant(input.market, research) ? research : null;
   const relevantTradeFlow = topAlert && sharesMarketTokens(input.market, topAlert.market) ? topAlert : null;
@@ -214,6 +224,18 @@ function buildModelPrompt({
     {
       task:
         "Analyze this prediction-market opportunity. Return JSON with recommendation, riskGate, confidence, thesis, summary, keyDrivers, missingEvidence, sourceCredibilityNotes, policyNotes, and tradePlan.",
+      analysisLayer:
+        analysisLayer === "x402_upgrade"
+          ? {
+              name: "x402_upgrade",
+              instruction:
+                "This is the paid x402 upgrade layer. Do not assume a fresh OpenDeepSearch pass ran here. Use paidX402Research as the new evidence, compare it against the baseline analysis when present, then run the ROMA-style source/risk/policy review and optional crypto quality check.",
+            }
+          : {
+              name: "base",
+              instruction:
+                "This is the base layer. Use OpenDeepSearch/registered-source context first, then ROMA-style source/risk/policy review and optional crypto quality check.",
+            },
       strictRules: [
         "Manual mode only.",
         "Do not execute trades.",
@@ -254,6 +276,8 @@ function buildModelPrompt({
         "For constitutional eligibility questions, do not equate legal barriers with literal zero probability. Separate nomination/acceptance rules from presidency/ballot-access rules; include legal loophole/tail-risk and annualized capital-lockup math before recommending NO at high prices.",
         "If recommendation is WAIT but one side is still the cleaner manual lean, include that side in policyNotes as: 'If you still trade manually, the cleaner lean is ... because ...'. If there is no cleaner side, say so explicitly.",
         "Use marketSpecificResearch as the primary research context when it is available.",
+        "For the x402_upgrade layer, do not send paid results back into OpenDeepSearch and do not imply that OpenDeepSearch re-ran. Paid services, especially BlockRun/Tavily/Exa/Parallel/social/Perplexity, are the fresh evidence layer.",
+        "For the x402_upgrade layer, explain what changed versus the baseline analysis: new data, stronger/ weaker confidence, newly visible paid signals, and remaining gaps.",
         "If paidX402Research exists, treat matching paid service evidence as highest priority, but explicitly ignore broad or unrelated service payloads that do not match the target market, teams, people, date, or venue.",
         "If paidX402Research includes top-holder or holder-flow services, summarize the top-side concentration and whether large wallets support YES, NO, or only indicate manipulation risk.",
         "Treat cachedResearch and cachedTradeFlow as secondary context; if unrelated to the target market, say confidence is lower instead of inventing relevance.",
@@ -294,16 +318,28 @@ function buildModelPrompt({
             error: marketResearch.error,
           }
         : null,
+      baselineAnalysis: baselineAnalysis
+        ? {
+            recommendation: baselineAnalysis.recommendation,
+            riskGate: baselineAnalysis.riskGate,
+            confidence: baselineAnalysis.confidence,
+            summary: baselineAnalysis.summary,
+            thesis: baselineAnalysis.thesis,
+            tradePlan: baselineAnalysis.tradePlan,
+          }
+        : null,
       paidX402Research: paidResearch
         ? {
             status: paidResearch.status,
             query: paidResearch.query,
             maxTotalUsdc: paidResearch.maxTotalUsdc,
             estimatedMaxSpendUsdc: paidResearch.estimatedMaxSpendUsdc,
+            actualPaidUsdc: paidResearch.actualPaidUsdc,
             services: paidResearch.services.map((service) => ({
               id: service.id,
               name: service.name,
               provider: service.provider,
+              phase: service.phase,
               status: service.status,
               maxAmountUsdc: service.maxAmountUsdc,
               purpose: service.purpose,

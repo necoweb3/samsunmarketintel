@@ -9,6 +9,8 @@ import { resolveCircleCliPath } from "@/src/product/circleCli";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LIVE_X402_BUDGET_USDC = 6;
+const DEFAULT_X402_SERVICE_CONCURRENCY = 1;
+const DEFAULT_X402_SERVICE_DELAY_MS = 1250;
 
 export type LiveX402ServiceId =
   | "blockrun-polymarket-markets"
@@ -468,18 +470,20 @@ export async function runLiveX402Research({
   const parallelServices = payableServices.filter((planned) => servicePhase(planned.service) === "parallel_context");
   const deepResearchServices = payableServices.filter((planned) => servicePhase(planned.service) === "deep_research");
 
-  const parallelResults = await Promise.all(
-    parallelServices.map((planned) =>
+  const parallelResults = await runServiceQueue(
+    parallelServices,
+    (planned) =>
       payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
-    ),
+    env,
   );
   for (const result of parallelResults) resultByServiceId.set(result.id, result);
 
   const deepResearchQuery = buildDeepResearchQuery(enrichedQuery, parallelResults);
-  const deepResults = await Promise.all(
-    deepResearchServices.map((planned) =>
+  const deepResults = await runServiceQueue(
+    deepResearchServices,
+    (planned) =>
       payService({ service: planned.service, query: deepResearchQuery, endpoint: planned.endpoint, address, chain }),
-    ),
+    env,
   );
   for (const result of deepResults) resultByServiceId.set(result.id, result);
 
@@ -507,6 +511,38 @@ export async function runLiveX402Research({
   await writeFile(savedTo, `${JSON.stringify(summary, null, 2)}\n`);
 
   return summary;
+}
+
+async function runServiceQueue<T>(
+  services: T[],
+  task: (service: T) => Promise<LiveX402ServiceResult>,
+  env: Record<string, string | undefined>,
+) {
+  const concurrency = readPositiveInteger(env.LIVE_X402_SERVICE_CONCURRENCY, DEFAULT_X402_SERVICE_CONCURRENCY);
+  const delayMs = readPositiveInteger(env.LIVE_X402_SERVICE_DELAY_MS, DEFAULT_X402_SERVICE_DELAY_MS);
+  const results: LiveX402ServiceResult[] = [];
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < services.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index > 0 && delayMs > 0) await sleep(delayMs);
+      results[index] = await task(services[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, services.length) }, () => worker()));
+  return results;
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function payService({

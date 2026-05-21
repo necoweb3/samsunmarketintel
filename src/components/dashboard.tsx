@@ -3215,10 +3215,6 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
         <span>Execution remains manual: x402 can improve confidence and side selection, but it cannot place a bet by itself.</span>
       </div>
 
-      <div className="mi-comparisonSlot">
-        <strong>Comparison visual slot</strong>
-        <p>Add the demo image here: base answer on the left, x402-upgraded answer on the right, with changed evidence highlighted.</p>
-      </div>
     </section>
   );
 }

@@ -43,26 +43,43 @@ type OpenRouterCreditsResponse = {
   };
 };
 
-export async function GET() {
-  const [gateway, wallet, openRouter] = await Promise.all([
-    readGatewayBalance(),
-    readWalletBalance(),
-    readOpenRouterCredits(),
-  ]);
-  const items = [gateway, wallet, openRouter];
+let budgetCache: {
+  expiresAt: number;
+  payload: {
+    status: "ok" | "partial";
+    checkedAt: string;
+    items: BudgetItem[];
+  };
+} | null = null;
 
-  return NextResponse.json(
-    {
-      status: items.every((item) => item.status === "ok") ? "ok" : "partial",
-      checkedAt: new Date().toISOString(),
-      items,
-    },
-    {
+export async function GET() {
+  if (budgetCache && budgetCache.expiresAt > Date.now()) {
+    return NextResponse.json(budgetCache.payload, {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": "private, max-age=60",
       },
+    });
+  }
+
+  const gateway = await readGatewayBalance();
+  const wallet = await readWalletBalance();
+  const openRouter = await readOpenRouterCredits();
+  const items = [gateway, wallet, openRouter];
+  const payload = {
+    status: items.every((item) => item.status === "ok") ? "ok" as const : "partial" as const,
+    checkedAt: new Date().toISOString(),
+    items,
+  };
+  budgetCache = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    payload,
+  };
+
+  return NextResponse.json(payload, {
+    headers: {
+      "Cache-Control": "private, max-age=60",
     },
-  );
+  });
 }
 
 async function readGatewayBalance(): Promise<BudgetItem> {
@@ -220,6 +237,9 @@ function summarizeCliError(error: unknown) {
   }
   if (/login|auth|unauthorized|session|token/i.test(detail)) {
     return "Circle CLI wallet session unavailable";
+  }
+  if (/429|too many requests|rate limit|cloudflare/i.test(detail)) {
+    return "Circle API rate limited; retry shortly";
   }
 
   return detail.slice(0, 180) || "Circle CLI unavailable";

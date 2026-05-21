@@ -2766,7 +2766,7 @@ function ChatMessageBubble({
                   {paidServicesForRun.map((service) => (
                     <div className={`mi-paidService ${service.status}`} key={service.id}>
                       <strong>{service.name}</strong>
-                      <span>{service.provider} / {service.status}</span>
+                      <span>{service.provider} / {formatPaidServiceStatusLabel(service.status)}</span>
                       <p>{formatPaidServiceSummary(service)}</p>
                     </div>
                   ))}
@@ -5866,6 +5866,14 @@ function formatPaidServiceSummary(
   }
 
   return cleaned;
+}
+
+function formatPaidServiceStatusLabel(
+  status: NonNullable<AgentRunRecord["paidResearch"]>["services"][number]["status"],
+) {
+  if (status === "error") return "data gap";
+  if (status === "skipped") return "skipped";
+  return "ok";
 }
 
 function isExactMarketDataService(service: PaidResearchService) {

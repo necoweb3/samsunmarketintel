@@ -164,7 +164,7 @@ export async function buildProductReadiness(env: Env = process.env): Promise<Pro
     },
   ];
 
-  const coreReady = x402Ready && agentReady && proofReady && safetyReady;
+  const coreReady = x402Ready && proofReady && safetyReady;
   const apiReady = coreReady && primaryModelReady;
   const status: ProductReadinessStatus = apiReady
     ? "ready_for_live_api_tests"
@@ -178,7 +178,11 @@ export async function buildProductReadiness(env: Env = process.env): Promise<Pro
     summary: buildSummary(status),
     checks,
     blockers: checks
-      .filter((check) => check.status === "blocked" || (check.status === "pending" && check.id !== "opendeepsearch"))
+      .filter(
+        (check) =>
+          check.status === "blocked" ||
+          (check.status === "pending" && !["opendeepsearch", "agent-ledgers"].includes(check.id)),
+      )
       .map((check) => check.label),
     apiBinding: {
       ready: apiReady,
@@ -205,7 +209,7 @@ function buildSummary(status: ProductReadinessStatus) {
   if (status === "infra_ready_api_keys_pending") {
     return "Core product flow is ready; live API trials are waiting on one primary model key.";
   }
-  return "Core product setup still needs local data, agent ledger, or Arc proof completion.";
+  return "Core product setup still needs paid data, safety, or Arc proof completion.";
 }
 
 async function readFileStatus(path: string) {

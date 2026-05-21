@@ -36,9 +36,9 @@ Default policy:
 ## Useful CLI Commands
 
 ```powershell
-C:\Users\pc\AppData\Roaming\npm\circle.cmd services search polymarket --limit 10 --output json
-C:\Users\pc\AppData\Roaming\npm\circle.cmd services inspect https://nano.blockrun.ai/api/v1/pm/polymarket/markets --output json
-C:\Users\pc\AppData\Roaming\npm\circle.cmd services pay https://nano.blockrun.ai/api/v1/pm/polymarket/markets --address 0xc421716945e8cfed01e06d0e73a3c7db0d733b0a --chain POLYGON --max-amount 0.001 --estimate --output json
+circle services search polymarket --limit 10 --output json
+circle services inspect https://nano.blockrun.ai/api/v1/pm/polymarket/markets --output json
+circle services pay https://nano.blockrun.ai/api/v1/pm/polymarket/markets --address 0xc421716945e8cfed01e06d0e73a3c7db0d733b0a --chain POLYGON --max-amount 0.001 --estimate --output json
 ```
 
 Workspace wrappers:

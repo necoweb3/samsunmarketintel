@@ -53,8 +53,6 @@ if (-not $Chain) {
 
 $circle = if ($env:CIRCLE_CLI_PATH) {
   $env:CIRCLE_CLI_PATH
-} elseif (Test-Path "C:\Users\pc\AppData\Roaming\npm\circle.cmd") {
-  "C:\Users\pc\AppData\Roaming\npm\circle.cmd"
 } else {
   "circle"
 }

@@ -57,6 +57,7 @@ export type AgentRunRecord = {
     marketProbability: number | null;
     agentProbability: number;
     inputRisk: AgentRunInput["risk"];
+    bankrollUsdc: number | null;
   };
   sentientContext?: SentientRunContext;
   marketResearch?: AgentMarketResearch;
@@ -74,12 +75,17 @@ export type AgentRunRecord = {
   createdAt: string;
 };
 
-export function buildAgentRun(input: AgentRunInput, existingIntents: TradeIntent[]) {
+export function buildAgentRun(
+  input: AgentRunInput,
+  existingIntents: TradeIntent[],
+  options: { bankrollUsdc?: number | null } = {},
+) {
   const sizing = estimatePositionSize({
     marketProbability: input.marketProbability,
     agentProbability: input.agentProbability,
     confidence: input.confidence,
     risk: input.risk,
+    bankrollUsdc: options.bankrollUsdc ?? 0,
   });
   const policy = evaluateAgentPolicy(existingIntents);
   const riskGate = readRiskGate(input.risk, sizing);
@@ -108,6 +114,7 @@ export function buildAgentRun(input: AgentRunInput, existingIntents: TradeIntent
       marketProbability: input.marketProbability,
       agentProbability: input.agentProbability,
       inputRisk: input.risk,
+      bankrollUsdc: options.bankrollUsdc ?? null,
     },
     sources: input.sources,
     marketPriceLabel: input.marketPriceLabel,
@@ -118,6 +125,22 @@ export function buildAgentRun(input: AgentRunInput, existingIntents: TradeIntent
     outcomeSummary: input.outcomeSummary,
     createdAt: new Date().toISOString(),
   } satisfies AgentRunRecord;
+}
+
+export function applyModelAnalysisToAgentRun(
+  run: AgentRunRecord,
+  modelAnalysis: LiveAgentModelAnalysis,
+): AgentRunRecord {
+  if (modelAnalysis.status !== "ok") return run;
+
+  return {
+    ...run,
+    action: mapModelRecommendation(modelAnalysis.recommendation, run.action),
+    riskGate: modelAnalysis.riskGate,
+    summary: modelAnalysis.summary,
+    edge: modelAnalysis.tradePlan?.edge ?? run.edge,
+    confidence: modelAnalysis.confidence,
+  };
 }
 
 function readRiskGate(risk: AgentRunInput["risk"], sizing: PositionSizingResult) {
@@ -159,4 +182,15 @@ function buildSummary(
 function buildRunId(marketId: string) {
   const normalized = marketId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `run-${normalized || "market"}-${Date.now()}`;
+}
+
+function mapModelRecommendation(
+  recommendation: LiveAgentModelAnalysis["recommendation"],
+  fallback: AgentRunRecord["action"],
+): AgentRunRecord["action"] {
+  if (recommendation === "BET_YES") return "BET_YES";
+  if (recommendation === "BET_NO") return "BET_NO";
+  if (recommendation === "DO_NOT_BET") return "DO_NOT_BET";
+  if (recommendation === "WAIT" || recommendation === "RESEARCH_MORE") return "WAIT";
+  return fallback;
 }

@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { requestLiveAgentModelAnalysis } from "@/src/product/agentModelAnalysis";
 import type { LiveAgentModelAnalysis } from "@/src/product/agentModelAnalysis";
-import { buildAgentRun, type AgentRunRecord } from "@/src/product/agentRun";
+import { readAgentBankrollUsdc, readAgentGatewaySpendableUsdc } from "@/src/product/agentBankroll";
+import { applyModelAnalysisToAgentRun, buildAgentRun, type AgentRunRecord } from "@/src/product/agentRun";
 import { appendAgentRun, readAgentRunLedger } from "@/src/product/agentRunLedger";
 import { evaluateCryptoAnalystBench } from "@/src/product/cryptoAnalystBench";
 import { readIntentLedger } from "@/src/product/intentLedger";
@@ -57,7 +58,21 @@ export async function POST(request: Request) {
 
   const input = parsed.data;
   const query = buildPaidResearchQuery(input);
-  const [paidResearch, tradePayload, researchPayload, sourceRegistry, intents, existingRuns] =
+  const gatewaySpendableUsdc = await readAgentGatewaySpendableUsdc();
+
+  if (gatewaySpendableUsdc !== null && gatewaySpendableUsdc < 0.02) {
+    return NextResponse.json(
+      {
+        status: "error",
+        run: null,
+        message:
+          "Circle Gateway spendable balance is too low for live x402 research. Top up Gateway before running the paid upgrade.",
+      },
+      { status: 402 },
+    );
+  }
+
+  const [paidResearch, tradePayload, researchPayload, sourceRegistry, intents, existingRuns, bankrollUsdc] =
     await Promise.all([
       runLiveX402Research({
         marketId: input.marketId,
@@ -69,8 +84,9 @@ export async function POST(request: Request) {
       readSourceRegistry(),
       readIntentLedger(),
       readAgentRunLedger(),
+      readAgentBankrollUsdc(),
     ]);
-  const deterministicRun = buildAgentRun(input, intents.intents);
+  const deterministicRun = buildAgentRun(input, intents.intents, { bankrollUsdc });
   const previousRun = findPreviousRun(input, existingRuns.runs);
   const integrity = tradePayload ? buildIntegritySnapshot(tradePayload) : null;
   const research = researchPayload ? buildResearchSnapshot(researchPayload, { sourceRegistry }) : null;
@@ -102,8 +118,9 @@ export async function POST(request: Request) {
     marketResearch: null,
     paidResearch,
   });
+  const modelAdjustedRun = applyModelAnalysisToAgentRun(deterministicRun, modelAnalysis);
   const run = {
-    ...deterministicRun,
+    ...modelAdjustedRun,
     sentientContext,
     marketResearch: previousRun?.marketResearch,
     paidResearch,

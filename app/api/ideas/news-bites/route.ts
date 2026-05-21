@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
+import { z } from "zod";
 
+import { readPrimaryModelConfig } from "@/src/product/primaryModel";
 import { readSourceRegistry, type SourceRegistryRecord } from "@/src/product/sourceRegistry";
 
 export const dynamic = "force-dynamic";
@@ -67,14 +70,14 @@ type SourceMatch = {
 
 const BASE_QUERY_SPECS: QuerySpec[] = [
   {
-    q: "Turkey breaking news today court arrest investigation public figure market",
+    q: "site:aa.com.tr OR site:dw.com OR site:bbc.com/turkce Turkiye bugun tutuklama sorusturma mahkeme kamuoyu",
     tbs: "qdr:d",
     horizon: "Daily",
     endpoint: "search",
     feedType: "web",
   },
   {
-    q: "Turkiye son dakika bugun gozaltina alindi tutuklandi sorusturma mahkeme",
+    q: "Turkiye son dakika bugun gozalti tutuklama iddianame savcilik mahkeme resmi aciklama",
     tbs: "qdr:d",
     horizon: "Daily",
     endpoint: "search",
@@ -116,6 +119,18 @@ const BASE_QUERY_SPECS: QuerySpec[] = [
     horizon: "Weekly",
   },
 ];
+
+const ideaReviewSchema = z.object({
+  items: z.array(z.object({
+    id: z.string().min(1),
+    marketPotential: z.enum(["High", "Medium", "Watch"]).optional(),
+    score: z.number().min(0).max(100).optional(),
+    category: z.string().min(2).max(80).optional(),
+    reasons: z.array(z.string().min(2).max(220)).max(4).optional(),
+    suggestedQuestion: z.string().min(10).max(260).optional(),
+    resolutionHint: z.string().min(10).max(260).optional(),
+  })).max(24),
+});
 
 const FEATURED_MARKET_CASES: NewsBite[] = [
   {
@@ -260,20 +275,131 @@ export async function GET() {
     .map((item, index) => classifyNewsItem(item, registry, now, index))
     .filter((item): item is NewsBite => item !== null)
     .sort((a, b) => b.score - a.score);
-  const items = await enrichNewsThumbnails(
+  const reviewedItems = await reviewMarketIdeasWithModel(
     dedupeClassifiedItems([...FEATURED_MARKET_CASES, ...classifiedItems]).slice(0, 30),
+  );
+  const items = await enrichNewsThumbnails(
+    reviewedItems.items,
   );
 
   return NextResponse.json(
     buildResponse(
       items.length > 0 ? items : [...FEATURED_MARKET_CASES, ...FALLBACK_ITEMS],
       updatedAt,
-      items.length > 0 ? "serper-news + featured-case" : "fallback + featured-case",
+      items.length > 0
+        ? `serper-news + featured-case${reviewedItems.modelReviewed ? " + model-review" : ""}`
+        : "fallback + featured-case",
       registry,
       items.length > 0 ? undefined : "Live provider returned no fresh Turkey-focused market candidates.",
     ),
     { headers: { "Cache-Control": "no-store" } },
   );
+}
+
+async function reviewMarketIdeasWithModel(items: NewsBite[]) {
+  const config = readPrimaryModelConfig();
+  if (items.length === 0 || config.status !== "ready" || !config.openAICompatible || !config.baseUrl) {
+    return { items, modelReviewed: false };
+  }
+
+  const apiKey = process.env[config.apiKeyEnv];
+  if (!apiKey) return { items, modelReviewed: false };
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL: config.baseUrl,
+    defaultHeaders:
+      config.provider === "OpenRouter"
+        ? {
+            "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3050",
+            "X-Title": "Samsun Market Intel",
+          }
+        : undefined,
+  });
+
+  try {
+    const response = await client.chat.completions.create(
+      {
+        model: config.providerModel,
+        temperature: 0.1,
+        max_tokens: Math.min(config.maxOutputTokens, 2600),
+        messages: [
+          {
+            role: "system",
+            content:
+              "You review Turkey news candidates for prediction-market potential. Use only the provided title, summary, source, source support, and heuristic reasons. Do not invent facts. Upgrade only items with clear resolution targets, freshness, public demand, and credible source support. Return compact JSON only.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              task:
+                "Review these items. Keep or revise marketPotential, score, category, reasons, suggestedQuestion, and resolutionHint. High means strong market-creation potential; Watch means interesting but needs confirmation; Medium is context only.",
+              items: items.slice(0, 24).map((item) => ({
+                id: item.id,
+                title: item.title,
+                summary: item.summary,
+                sourceName: item.sourceName,
+                category: item.category,
+                marketPotential: item.marketPotential,
+                score: item.score,
+                reasons: item.reasons,
+                suggestedQuestion: item.suggestedQuestion,
+                resolutionHint: item.resolutionHint,
+                sourceSupport: item.sourceSupport,
+              })),
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: 35_000 },
+    );
+
+    const parsed = ideaReviewSchema.safeParse(parseJson(response.choices[0]?.message?.content ?? ""));
+    if (!parsed.success) return { items, modelReviewed: false };
+
+    const reviews = new Map(parsed.data.items.map((item) => [item.id, item]));
+    return {
+      modelReviewed: true,
+      items: items.map((item) => {
+        const review = reviews.get(item.id);
+        if (!review) return item;
+        const score = typeof review.score === "number" ? clampScore(review.score) : item.score;
+        return {
+          ...item,
+          category: review.category ?? item.category,
+          marketPotential: review.marketPotential ?? readPotentialFromScore(score, item.marketPotential),
+          score,
+          reasons: review.reasons?.length ? review.reasons : item.reasons,
+          suggestedQuestion: review.suggestedQuestion ?? item.suggestedQuestion,
+          resolutionHint: review.resolutionHint ?? item.resolutionHint,
+          scoreExplanation:
+            "Market potential score, not probability. It combines freshness, resolution clarity, source quality, demand, risk, and model review.",
+        };
+      }),
+    };
+  } catch {
+    return { items, modelReviewed: false };
+  }
+}
+
+function parseJson(content: string) {
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    return match ? JSON.parse(match[0]) as unknown : null;
+  }
+}
+
+function clampScore(value: number) {
+  return Math.max(20, Math.min(96, Math.round(value)));
+}
+
+function readPotentialFromScore(score: number, fallback: NewsPotential): NewsPotential {
+  if (score >= 82) return "High";
+  if (score >= 68) return "Medium";
+  return fallback === "High" ? "Watch" : fallback;
 }
 
 function buildQuerySpecs(registry: SourceRegistryRecord[]): QuerySpec[] {
@@ -295,7 +421,7 @@ function buildQuerySpecs(registry: SourceRegistryRecord[]): QuerySpec[] {
     .slice(0, 18);
 
   const sourceQueries = sourceDomains.map((domain): QuerySpec => ({
-    q: `site:${domain} Türkiye bugün soruşturma mahkeme TCMB enflasyon seçim spor bahis resmi açıklama`,
+    q: `site:${domain} (Turkiye OR Turkey) (tutuklama OR sorusturma OR mahkeme OR TCMB OR enflasyon OR secim OR spor OR bahis OR "resmi aciklama")`,
     tbs: "qdr:w",
     horizon: "Weekly",
     sourceDomain: domain,

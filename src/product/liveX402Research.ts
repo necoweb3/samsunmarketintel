@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { Buffer } from "node:buffer";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { resolveCircleCliPath } from "@/src/product/circleCli";
@@ -275,8 +275,8 @@ const SERVICE_PLAN: ServicePlan[] = [
     endpoint: "https://api.aisa.one/apis/v2/perplexity/sonar",
     method: "POST",
     maxAmountUsdc: 0.5,
-    timeoutSeconds: 600,
-    execTimeoutMs: 0,
+    timeoutSeconds: 180,
+    execTimeoutMs: 240_000,
     purpose: "Paid cited synthesis for the final research memo.",
     body: (query) => ({
       model: "sonar",
@@ -305,8 +305,8 @@ const SERVICE_PLAN: ServicePlan[] = [
     endpoint: "https://api.aisa.one/apis/v2/perplexity/sonar-deep-research",
     method: "POST",
     maxAmountUsdc: 2,
-    timeoutSeconds: 600,
-    execTimeoutMs: 0,
+    timeoutSeconds: 240,
+    execTimeoutMs: 300_000,
     purpose: "Exhaustive cited research report for noisy event, macro, and geopolitical markets.",
     body: (query) => ({
       model: "sonar-deep-research",
@@ -475,9 +475,10 @@ export async function runLiveX402Research({
   );
   for (const result of parallelResults) resultByServiceId.set(result.id, result);
 
+  const deepResearchQuery = buildDeepResearchQuery(enrichedQuery, parallelResults);
   const deepResults = await Promise.all(
     deepResearchServices.map((planned) =>
-      payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
+      payService({ service: planned.service, query: deepResearchQuery, endpoint: planned.endpoint, address, chain }),
     ),
   );
   for (const result of deepResults) resultByServiceId.set(result.id, result);
@@ -803,11 +804,36 @@ function resolveCircleJsPath() {
   }
 
   const candidates = [
-    "C:\\Users\\pc\\AppData\\Roaming\\npm\\node_modules\\@circle-fin\\cli\\dist\\index.js",
-    "C:\\Users\\pc\\AppData\\Roaming\\npm\\node_modules\\@circle-fin\\cli\\bin\\circle.js",
+    join(process.cwd(), "node_modules", "@circle-fin", "cli", "dist", "index.js"),
+    join(process.cwd(), "node_modules", "@circle-fin", "cli", "bin", "circle.js"),
+    process.env.APPDATA
+      ? join(process.env.APPDATA, "npm", "node_modules", "@circle-fin", "cli", "dist", "index.js")
+      : null,
+    process.env.APPDATA
+      ? join(process.env.APPDATA, "npm", "node_modules", "@circle-fin", "cli", "bin", "circle.js")
+      : null,
   ];
 
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  return candidates.find((candidate): candidate is string => Boolean(candidate && existsSync(candidate))) ?? null;
+}
+
+function buildDeepResearchQuery(baseQuery: string, parallelResults: LiveX402ServiceResult[]) {
+  const usable = parallelResults
+    .filter((result) => result.status === "ok")
+    .map((result) => `${result.name}: ${truncate(result.summary, 700)}`)
+    .slice(0, 10);
+  const gaps = parallelResults
+    .filter((result) => result.status !== "ok")
+    .map((result) => `${result.name}: ${result.status}`)
+    .slice(0, 6);
+
+  return [
+    baseQuery,
+    "Paid context pass completed before this Deep Research request.",
+    usable.length > 0 ? `Usable paid context:\n${usable.join("\n")}` : "No usable paid context returned yet.",
+    gaps.length > 0 ? `Known data gaps to avoid treating as evidence:\n${gaps.join("\n")}` : "",
+    "Use the paid context as leads, verify with cited sources, and explain what is newly supported versus still missing.",
+  ].filter(Boolean).join("\n\n").slice(0, 5000);
 }
 
 function summarizeRawPayload(rawText: string) {

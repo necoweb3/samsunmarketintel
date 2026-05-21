@@ -106,7 +106,7 @@ function buildCircleCommand({
   wallet: string;
 }) {
   return [
-    "& 'C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd'",
+    "circle",
     "wallet execute",
     `"${ANALYSIS_RECEIPT_FUNCTION}"`,
     ...receiptArgs.map(String),

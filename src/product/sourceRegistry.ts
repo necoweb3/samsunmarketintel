@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { turkeyStarterSources } from "@/src/product/starterSources";
 import { sourceCredibilityRules, type CredibilityTier } from "@/src/product/sourceCredibility";
 
 export type SourceRegistryRecord = {
@@ -33,6 +34,7 @@ const CUSTOM_SOURCE_REGISTRY_PATH = ".cache/sources/registry.json";
 export function buildSourceRegistry(): SourceRegistryRecord[] {
   return [
     ...sourceCredibilityRules.map(mapRuleToRecord),
+    ...turkeyStarterSources.map(normalizeSourceRegistryInput),
     {
       id: "circle-x402-market-apis",
       name: "Circle x402 market APIs",
@@ -74,7 +76,7 @@ export function buildSourceRegistry(): SourceRegistryRecord[] {
 
 export async function readSourceRegistry(path = CUSTOM_SOURCE_REGISTRY_PATH) {
   const custom = await readCustomSourceRegistry(path);
-  return [...buildSourceRegistry(), ...custom];
+  return dedupeSourceRegistry([...buildSourceRegistry(), ...custom]);
 }
 
 export async function readCustomSourceRegistry(path = CUSTOM_SOURCE_REGISTRY_PATH) {
@@ -211,6 +213,14 @@ function normalizeRegistryDomain(value: string) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
+}
+
+function dedupeSourceRegistry(records: SourceRegistryRecord[]) {
+  const byId = new Map<string, SourceRegistryRecord>();
+  for (const record of records) {
+    byId.set(record.id, record);
+  }
+  return Array.from(byId.values());
 }
 
 function isSourceRegistryRecord(value: unknown): value is SourceRegistryRecord {

@@ -266,7 +266,7 @@ function mergeSearchSources(answer: string, sources: OpenDeepSearchSource[]) {
     .join("\n");
 
   if (isThinAnswer(answer)) {
-    return `OpenDeepSearch returned a thin answer, so Serper web results were attached for source grounding.\n\nSearch sources:\n${sourceSummary}`;
+    return `Web research returned a thin answer, so additional search results were attached for source grounding.\n\nSearch sources:\n${sourceSummary}`;
   }
 
   return `${answer}\n\nSearch sources:\n${sourceSummary}`;

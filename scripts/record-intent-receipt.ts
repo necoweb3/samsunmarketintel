@@ -16,7 +16,6 @@ import { buildIntentReceiptCandidate } from "../src/product/intentReceipt.js";
 import { readIntentLedger } from "../src/product/intentLedger.js";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 
 const rpcUrl =
   process.env.ARC_TESTNET_RPC_URL ?? process.env.ARC_CANTEEN_RPC_URL ?? process.env.RPC;
@@ -110,7 +109,6 @@ console.log(
 
 function resolveCirclePath() {
   if (process.env.CIRCLE_CLI_PATH) return process.env.CIRCLE_CLI_PATH;
-  if (process.platform === "win32") return DEFAULT_WINDOWS_CIRCLE;
   return "circle";
 }
 

@@ -77,8 +77,8 @@ export async function buildDemoPreflight(): Promise<DemoPreflightReport> {
     },
     {
       id: "source-registry",
-      status: customSources.length > 0 ? "ready" : "pending",
-      detail: `${sourceSummary.records} total source records; ${customSources.length} starter/custom records.`,
+      status: sourceSummary.records > 0 ? "ready" : "pending",
+      detail: `${sourceSummary.records} total source records; ${customSources.length} user-added records.`,
     },
     {
       id: "market-studio",
@@ -127,7 +127,7 @@ function buildNextActions(checks: DemoPreflightReport["checks"]) {
     actions.push("Run one live agent analysis from the dashboard.");
   }
   if (checks.some((check) => check.id === "source-registry" && check.status === "pending")) {
-    actions.push("Run npm run sources:seed or add Turkey sources from the dashboard.");
+    actions.push("Add custom Turkey sources from the dashboard if the starter registry is not enough.");
   }
   if (checks.some((check) => check.id === "arc-proof" && check.status === "pending")) {
     actions.push("Record the latest staged intent receipt on Arc Testnet after manual review.");

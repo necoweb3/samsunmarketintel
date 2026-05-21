@@ -18,6 +18,7 @@ const intentSchema = z.object({
   agentProbability: z.number().min(0).max(1),
   confidence: z.number().min(0).max(1),
   risk: z.enum(["Low", "Medium", "High"]),
+  bankrollUsdc: z.number().min(0).optional(),
   origin: z.enum(["user", "model", "source_text", "memory", "scheduled_agent"]).default("user"),
   hasHumanApproval: z.boolean().default(true),
 });

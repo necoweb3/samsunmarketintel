@@ -7,7 +7,6 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_WINDOWS_CIRCLE = "C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd";
 const DEFAULT_OUT_FILE = ".cache/x402/latest-research-search.json";
 
 type Mode = "inspect" | "estimate" | "pay";
@@ -165,7 +164,7 @@ function buildCircleInvocation(args: string[]) {
     return { file: "node", args: [jsPath, ...args] };
   }
 
-  const circlePath = process.env.CIRCLE_CLI_PATH || (process.platform === "win32" ? DEFAULT_WINDOWS_CIRCLE : "circle");
+  const circlePath = process.env.CIRCLE_CLI_PATH || "circle";
   if (process.platform !== "win32") {
     return { file: circlePath, args };
   }
@@ -181,14 +180,16 @@ function resolveCircleJsPath() {
     return process.env.CIRCLE_CLI_JS_PATH;
   }
 
-  const shimPath = process.env.CIRCLE_CLI_PATH || DEFAULT_WINDOWS_CIRCLE;
-  if (existsSync(shimPath)) {
+  const shimPath = process.env.CIRCLE_CLI_PATH;
+  if (shimPath && existsSync(shimPath)) {
     const fromShim = readCircleShimTarget(shimPath);
     if (fromShim && existsSync(fromShim)) return fromShim;
   }
 
   const appData = process.env.APPDATA;
   const candidates = [
+    join(process.cwd(), "node_modules", "@circle-fin", "cli", "dist", "index.js"),
+    join(process.cwd(), "node_modules", "@circle-fin", "cli", "bin", "circle.js"),
     appData ? join(appData, "npm", "node_modules", "@circle-fin", "cli", "dist", "index.js") : null,
     appData ? join(appData, "npm", "node_modules", "@circle-fin", "cli", "dist", "cli.js") : null,
     appData ? join(appData, "npm", "node_modules", "@circle-fin", "cli", "index.js") : null,

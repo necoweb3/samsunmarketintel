@@ -4,8 +4,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requestLiveAgentModelAnalysis } from "@/src/product/agentModelAnalysis";
+import { readAgentBankrollUsdc } from "@/src/product/agentBankroll";
 import { appendAgentRun, readAgentRunLedger } from "@/src/product/agentRunLedger";
-import { buildAgentRun, type AgentMarketResearch } from "@/src/product/agentRun";
+import { applyModelAnalysisToAgentRun, buildAgentRun, type AgentMarketResearch } from "@/src/product/agentRun";
 import { evaluateCryptoAnalystBench } from "@/src/product/cryptoAnalystBench";
 import { readIntentLedger } from "@/src/product/intentLedger";
 import { buildIntegritySnapshot } from "@/src/product/integrityAnalysis";
@@ -69,8 +70,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const intents = await readIntentLedger();
-  const deterministicRun = buildAgentRun(parsed.data, intents.intents);
+  const [intents, bankrollUsdc] = await Promise.all([
+    readIntentLedger(),
+    readAgentBankrollUsdc(),
+  ]);
+  const deterministicRun = buildAgentRun(parsed.data, intents.intents, { bankrollUsdc });
   const [tradePayload, researchPayload, sourceRegistry, marketResearch] = await Promise.all([
     readJson(TRADES_CACHE),
     readJson(RESEARCH_CACHE),
@@ -102,8 +106,9 @@ export async function POST(request: Request) {
     research,
     marketResearch,
   });
+  const modelAdjustedRun = applyModelAnalysisToAgentRun(deterministicRun, modelAnalysis);
   const run = {
-    ...deterministicRun,
+    ...modelAdjustedRun,
     sentientContext,
     marketResearch: marketResearchSummary,
     modelAnalysis,
@@ -162,7 +167,7 @@ function buildTopicQuery(input: z.infer<typeof runSchema>) {
   }
 
   if (normalized.includes("israel") && normalized.includes("syria")) {
-    return "Israel Syria security agreement talks September 30 diplomatic negotiations latest news";
+    return `${input.market} Israel Syria security agreement diplomatic negotiations latest official statements credible regional analysis`;
   }
 
   if (

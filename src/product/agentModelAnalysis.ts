@@ -142,8 +142,18 @@ export async function requestLiveAgentModelAnalysis({
       messages: [
         {
           role: "system",
-          content:
-            "You are Samsun Market Intel's prediction-market analyst. You analyze data and produce a manual decision memo. Never claim that a bet, payment, wallet action, or onchain transaction was executed. Return only valid JSON.",
+          content: [
+            "You are a senior prediction-market analyst for Samsun Market Intel.",
+            "You specialize in identifying mispriced Polymarket markets by combining news evidence, trade-flow signals, source credibility analysis, and local Turkish event intelligence.",
+            "Your core principles:",
+            "- Reason from evidence, not assumptions. Calibrate confidence from source quality. Never default to 0.55.",
+            "- Identify edge by comparing your fair probability to the venue price. State the edge clearly when it exists; do not hide behind WAIT when one side is clearly advantaged by at least 4 percentage points.",
+            "- Always distinguish venue price or cents quote from probability. Never conflate the two. Use cent language for Polymarket prices unless an external source explicitly gives a percentage.",
+            "- Manual approval is mandatory before any trade. You produce decision memos, not trade executions. Never claim a bet, payment, wallet action, or onchain transaction was executed.",
+            "- When evidence is thin, say so directly instead of manufacturing confidence.",
+            "- Source credibility notes are written for the end user, not as internal system criticism. Say 'web research is partial' rather than 'OpenDeepSearch was insufficient'.",
+            "Return only valid JSON matching the exact schema provided. No preamble, no markdown, no text outside the JSON object.",
+          ].join("\n"),
         },
         {
           role: "user",
@@ -473,6 +483,17 @@ function alignTradePlanWithLean(
 }
 
 function detectCleanerLean(analysis: ParsedModelAnalysis): "YES" | "NO" | null {
+  const tradePlan = analysis.tradePlan ?? null;
+  const plannedSide = tradePlan?.side;
+  if (
+    tradePlan &&
+    (plannedSide === "YES" || plannedSide === "NO") &&
+    tradePlan.status !== "avoid" &&
+    (tradePlan.edge === null || Math.abs(tradePlan.edge) >= 0.025)
+  ) {
+    return plannedSide;
+  }
+
   const text = [
     ...analysis.policyNotes,
     analysis.summary,

@@ -214,6 +214,8 @@ type AgentRunRecord = {
   confidence: number;
   sizing: {
     side: "YES" | "NO" | "NONE";
+    rawKellyFraction: number;
+    confidenceAdjustedFraction: number;
     stakeUsdc: number;
     cappedFraction: number;
     reason: string;
@@ -227,6 +229,7 @@ type AgentRunRecord = {
     marketProbability: number | null;
     agentProbability: number;
     inputRisk: "Low" | "Medium" | "High";
+    bankrollUsdc?: number | null;
   };
   sentientContext?: {
     mode: string;
@@ -1373,11 +1376,12 @@ export function Dashboard({
         }) ?? null
       : null;
   const sizing = selectedMarket
-    ? estimatePositionSize({
+    ? selectedRun?.sizing ?? estimatePositionSize({
         marketProbability: selectedRun?.analysis?.marketProbability ?? selectedMarket.probability,
         agentProbability: selectedRun?.analysis?.agentProbability ?? selectedMarket.agentProbability,
         confidence: selectedRun?.confidence ?? selectedMarket.confidence,
         risk: selectedRun?.analysis?.inputRisk ?? selectedMarket.risk,
+        bankrollUsdc: selectedRun?.analysis?.bankrollUsdc ?? 0,
       })
     : null;
 
@@ -1705,6 +1709,7 @@ export function Dashboard({
             selectedRun?.analysis?.agentProbability ?? selectedMarket.agentProbability,
           confidence: selectedRun?.confidence ?? selectedMarket.confidence,
           risk: selectedRun?.analysis?.inputRisk ?? selectedMarket.risk,
+          bankrollUsdc: selectedRun?.analysis?.bankrollUsdc ?? undefined,
           marketPriceLabel: selectedRun?.marketPriceLabel ?? selectedMarket.marketPriceLabel,
           targetOutcome: selectedRun?.modelAnalysis?.tradePlan?.targetOutcome ?? null,
         }),
@@ -1757,6 +1762,7 @@ export function Dashboard({
           agentProbability: run.analysis?.agentProbability ?? 0.5,
           confidence: run.modelAnalysis?.confidence ?? run.confidence,
           risk: run.analysis?.inputRisk ?? "Medium",
+          bankrollUsdc: run.analysis?.bankrollUsdc ?? undefined,
           marketPriceLabel: run.marketPriceLabel,
           targetOutcome: run.modelAnalysis?.tradePlan?.targetOutcome ?? null,
           origin: "user",
@@ -2648,7 +2654,11 @@ function ChatMessageBubble({
             <DataPoint label="Decision" value={formatActionLabel(run.modelAnalysis?.recommendation ?? run.action)} />
             <DataPoint label="Risk gate" value={run.modelAnalysis?.riskGate ?? run.riskGate} />
             <DataPoint label="Venue price" value={formatRunMarketPrice(run)} />
-            <DataPoint label="Confidence" value={formatPercent(run.modelAnalysis?.confidence ?? run.confidence)} />
+            <DataPoint
+              label="Confidence"
+              value={formatPercent(run.modelAnalysis?.confidence ?? run.confidence)}
+              hint="How strongly the agent trusts the evidence stack for this recommendation."
+            />
             <DataPoint label="Stake" value={formatStake(run.sizing.stakeUsdc)} />
           </div>
           <IntegrityBadge run={run} />
@@ -3139,6 +3149,7 @@ function X402CostEstimate({ compact = false }: { compact?: boolean }) {
         <strong>x402 upgrade estimate</strong>
         <p>
           Paid context runs BlockRun, Tavily, Exa/Parallel, market-data and social services first; Perplexity Deep Research runs after that evidence pass.
+          Gateway spendable balance is checked before the paid pass, so an empty wallet is blocked before services are called.
         </p>
       </div>
       <div className="mi-x402EstimateGrid">
@@ -4298,7 +4309,8 @@ function MarketsPage({
           <div className="mi-statusStrip">
             <DataPoint label="Venue price" value={formatMarketPrice(selectedMarket)} />
             <DataPoint
-              label="Agent"
+              label="Fair probability"
+              hint="The agent's evidence-weighted probability estimate, separate from the venue quote."
               value={
                 selectedRun
                   ? formatPercent(selectedRun.analysis?.agentProbability ?? selectedMarket.agentProbability)
@@ -5057,8 +5069,16 @@ function ActivityPage({
                   <div className="mi-ledgerExpanded">
                     <div className="mi-chatRunGrid">
                       <DataPoint label="Venue price" value={formatRunMarketPrice(run)} />
-                      <DataPoint label="Agent" value={formatPercent(run.analysis?.agentProbability)} />
-                      <DataPoint label="Confidence" value={formatPercent(run.modelAnalysis?.confidence ?? run.confidence)} />
+                      <DataPoint
+                        label="Fair probability"
+                        value={formatPercent(run.analysis?.agentProbability)}
+                        hint="The agent's evidence-weighted probability estimate, separate from the venue quote."
+                      />
+                      <DataPoint
+                        label="Confidence"
+                        value={formatPercent(run.modelAnalysis?.confidence ?? run.confidence)}
+                        hint="How strongly the agent trusts the evidence stack for this recommendation."
+                      />
                       <DataPoint label="Stake" value={formatStake(run.sizing.stakeUsdc)} />
                     </div>
                     {run.paidResearch ? <PaidResearchImpactSummary run={run} compact /> : null}
@@ -5223,9 +5243,9 @@ function MarketThumbnail({ market }: { market: MarketCandidate }) {
   );
 }
 
-function DataPoint({ label, value }: { label: string; value: string }) {
+function DataPoint({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="mi-dataPoint">
+    <div className="mi-dataPoint" title={hint}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

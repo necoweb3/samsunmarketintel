@@ -40,10 +40,11 @@ Some signals are always available; others depend on whether the paid provider re
 | Base OpenDeepSearch analysis | Live. Runs before x402 and stays as the baseline. |
 | ROMA review | Live as a structured reviewer pattern inside the prompt and UI flow. |
 | CryptoAnalystBench quality check | Live for crypto/Web3/stablecoin/onchain-related markets; skipped elsewhere. |
-| Kelly-style sizing | Live deterministic sizing when market quote, fair probability, confidence, and risk are available. If the edge is missing or below threshold, stake is `$0`. |
+| Kelly-style sizing | Live deterministic sizing when market quote, fair probability, confidence, risk, and the agent wallet / Gateway spendable bankroll are available. If the edge is missing, below threshold, or bankroll is unavailable, stake is `$0`. |
 | Holder concentration | Live only when x402 top-holder endpoints return exact holder rows. Otherwise the UI marks "No rows" or "Skipped." |
 | Orderbook/candlestick signals | Live only when the market exposes token/condition identifiers accepted by the paid endpoint. Otherwise treated as a data gap. |
 | X engagement | Live through paid social search when recent dated posts are returned. It is sentiment/context, not proof. |
+| Market Ideas scoring | Live through Serper/source-registry discovery plus an optional primary-model review pass when the model key is configured. |
 
 ## Product Scope
 
@@ -96,7 +97,7 @@ Flow:
 3. User manually triggers Analyze.
 4. The initial analysis is done via the base layer: OpenDeepSearch + registered sources + ROMA review + model layer.
 5. If desired, the user calls paid data with "Upgrade with Circle x402 research." The UI shows the approved cap and expected service-max cost before the user approves the paid pass.
-6. x402 results are processed in a separate upgrade layer: BlockRun/Tavily/Exa/Parallel/market-data/social services first, Perplexity Deep Research second, then ROMA review and optional CryptoAnalystBench.
+6. x402 results are processed in a separate upgrade layer: BlockRun/Tavily/Exa/Parallel/market-data/social services first, Perplexity Deep Research second using the first pass as context, then ROMA review and optional CryptoAnalystBench.
 7. The previous base analysis is preserved and compared against the x402-upgraded analysis.
 8. The agent updates its decision: bet, avoid, watch, or side-specific lean.
 9. The user can manually stage an intent.
@@ -359,7 +360,7 @@ Observed practical ranges:
 - Current service-max estimate for the configured paid bundle: about `4.95 USDC`.
 - Recent local demo receipts that included parseable x402 payment amounts ranged roughly from `$0.07` to `$0.40` per upgrade, with an average around `$0.16` across local cached runs. This is lower than the approved cap because providers often charge below the max amount and some exact-market endpoints are skipped when the market does not expose the needed condition/token identifiers.
 
-x402 calls in the product run with manual approval. Spending limits, provider allowlists, and service bundles are managed via backend config.
+x402 calls in the product run with manual approval. Before the paid pass starts, the backend checks Circle Gateway spendable balance and blocks the upgrade if the balance is too low. Position sizing uses the live agent bankroll from Gateway/wallet balance when available; it no longer assumes a fixed `100 USDC` bankroll.
 
 ## Setup
 

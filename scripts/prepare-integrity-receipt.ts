@@ -32,7 +32,7 @@ const wallet =
   "$env:ARC_TESTNET_AGENT_WALLET_ADDRESS";
 
 const command = [
-  "& 'C:\\Users\\pc\\AppData\\Roaming\\npm\\circle.cmd'",
+  "circle",
   "wallet execute",
   `"${ANALYSIS_RECEIPT_FUNCTION}"`,
   ...decision.receiptArgs.map(String),

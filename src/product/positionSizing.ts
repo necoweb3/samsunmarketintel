@@ -21,7 +21,7 @@ export function estimatePositionSize({
   agentProbability,
   confidence,
   risk,
-  bankrollUsdc = 100,
+  bankrollUsdc = 0,
   maxFraction = 0.03,
 }: PositionSizingInput): PositionSizingResult {
   if (marketProbability === null) {
@@ -44,6 +44,10 @@ export function estimatePositionSize({
 
   if (side === "NONE" || cappedFraction <= 0) {
     return emptySizing("No positive expected value after confidence and risk adjustment.");
+  }
+
+  if (bankrollUsdc <= 0) {
+    return emptySizing("Agent wallet bankroll is unavailable or zero; no stake is proposed.");
   }
 
   return {

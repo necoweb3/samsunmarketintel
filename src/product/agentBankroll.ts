@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 
 import { isAddress } from "viem";
 
-import { resolveCircleCliPath } from "@/src/product/circleCli";
+import { buildCircleCliInvocation } from "@/src/product/circleCli";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,12 +36,22 @@ export async function readAgentGatewaySpendableUsdc() {
   if (!address || !isAddress(address)) return null;
 
   try {
+    const invocation = buildCircleCliInvocation([
+      "gateway",
+      "balance",
+      "--address",
+      address,
+      "--chain",
+      chain,
+      "--output",
+      "json",
+    ]);
     const { stdout } = await execFileAsync(
-      resolveCircleCliPath(),
-      ["gateway", "balance", "--address", address, "--chain", chain, "--output", "json"],
+      invocation.file,
+      invocation.args,
       {
         maxBuffer: 1024 * 1024,
-        shell: process.platform === "win32",
+        shell: invocation.shell,
         timeout: 15_000,
         windowsHide: true,
       },
@@ -59,12 +69,22 @@ async function readWalletUsdcBalance() {
   if (!address || !isAddress(address)) return null;
 
   try {
+    const invocation = buildCircleCliInvocation([
+      "wallet",
+      "balance",
+      "--address",
+      address,
+      "--chain",
+      chain,
+      "--output",
+      "json",
+    ]);
     const { stdout } = await execFileAsync(
-      resolveCircleCliPath(),
-      ["wallet", "balance", "--address", address, "--chain", chain, "--output", "json"],
+      invocation.file,
+      invocation.args,
       {
         maxBuffer: 1024 * 1024,
-        shell: process.platform === "win32",
+        shell: invocation.shell,
         timeout: 15_000,
         windowsHide: true,
       },

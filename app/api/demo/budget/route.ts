@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import { isAddress } from "viem";
 
-import { resolveCircleCliPath } from "@/src/product/circleCli";
+import { buildCircleCliInvocation } from "@/src/product/circleCli";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -74,12 +74,22 @@ async function readGatewayBalance(): Promise<BudgetItem> {
   }
 
   try {
+    const invocation = buildCircleCliInvocation([
+      "gateway",
+      "balance",
+      "--address",
+      address,
+      "--chain",
+      chain,
+      "--output",
+      "json",
+    ]);
     const { stdout } = await execFileAsync(
-      resolveCircleCliPath(),
-      ["gateway", "balance", "--address", address, "--chain", chain, "--output", "json"],
+      invocation.file,
+      invocation.args,
       {
         maxBuffer: 1024 * 1024,
-        shell: process.platform === "win32",
+        shell: invocation.shell,
         timeout: 20_000,
         windowsHide: true,
       },
@@ -97,11 +107,12 @@ async function readGatewayBalance(): Promise<BudgetItem> {
         status: "ok",
       };
     }
-  } catch {
+  } catch (error) {
     // Fall back to demo override below.
+    return unavailableBudgetItem("gateway", "Gateway spendable", summarizeCliError(error));
   }
 
-  return unavailableBudgetItem("gateway", "Gateway spendable", "Circle CLI unavailable");
+  return unavailableBudgetItem("gateway", "Gateway spendable", "Gateway balance not returned");
 }
 
 async function readWalletBalance(): Promise<BudgetItem> {
@@ -113,12 +124,22 @@ async function readWalletBalance(): Promise<BudgetItem> {
   }
 
   try {
+    const invocation = buildCircleCliInvocation([
+      "wallet",
+      "balance",
+      "--address",
+      address,
+      "--chain",
+      chain,
+      "--output",
+      "json",
+    ]);
     const { stdout } = await execFileAsync(
-      resolveCircleCliPath(),
-      ["wallet", "balance", "--address", address, "--chain", chain, "--output", "json"],
+      invocation.file,
+      invocation.args,
       {
         maxBuffer: 1024 * 1024,
-        shell: process.platform === "win32",
+        shell: invocation.shell,
         timeout: 20_000,
         windowsHide: true,
       },
@@ -135,8 +156,9 @@ async function readWalletBalance(): Promise<BudgetItem> {
         status: "ok",
       };
     }
-  } catch {
+  } catch (error) {
     // Report unavailable instead of showing a synthetic value.
+    return unavailableBudgetItem("wallet", "Wallet USDC", summarizeCliError(error));
   }
 
   return unavailableBudgetItem("wallet", "Wallet USDC", `${chain} wallet balance unavailable`);
@@ -185,6 +207,22 @@ function missingBudgetItem(id: string, label: string, detail: string): BudgetIte
 
 function unavailableBudgetItem(id: string, label: string, detail: string): BudgetItem {
   return { id, label, value: "Unavailable", detail, status: "unavailable" };
+}
+
+function summarizeCliError(error: unknown) {
+  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+  const stderr = typeof record.stderr === "string" ? record.stderr : "";
+  const message = error instanceof Error ? error.message : String(error);
+  const detail = stderr || message;
+
+  if (/not recognized|ENOENT|no such file|cannot find/i.test(detail)) {
+    return "Circle CLI binary unavailable";
+  }
+  if (/login|auth|unauthorized|session|token/i.test(detail)) {
+    return "Circle CLI wallet session unavailable";
+  }
+
+  return detail.slice(0, 180) || "Circle CLI unavailable";
 }
 
 function formatDecimal(value: string | number) {

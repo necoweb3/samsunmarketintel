@@ -1552,6 +1552,46 @@ export function Dashboard({
     }
   }
 
+  async function deleteMarketRecent(marketId: string) {
+    const remainingRuns = agentRunLedgerState.runs.filter((run) => run.marketId !== marketId);
+    setAgentRunLedgerState((current) => ({
+      ...current,
+      runs: remainingRuns,
+      updatedAt: new Date().toISOString(),
+    }));
+    setLinkedMarkets((current) => current.filter((market) => market.id !== marketId));
+
+    if (selectedMarketId === marketId) {
+      const nextRun = remainingRuns[0];
+      setSelectedMarketId(nextRun?.marketId ?? "");
+    }
+
+    try {
+      const response = await fetch("/api/agent/run", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ marketId }),
+      });
+      const data = (await response.json()) as {
+        status: "ok" | "error";
+        ledger?: AgentRunLedgerState;
+        message?: string;
+      };
+
+      if (response.ok && data.status === "ok" && data.ledger) {
+        setAgentRunLedgerState({
+          status: "ok",
+          runs: data.ledger.runs,
+          updatedAt: data.ledger.updatedAt,
+        });
+      }
+    } catch {
+      // The UI deletion is still valid for the current session; the next refresh will retry from server state.
+    }
+  }
+
   function ensureChatThread(prompt: string) {
     if (activeThreadId) return activeThreadId;
 
@@ -1727,7 +1767,12 @@ export function Dashboard({
         return;
       }
 
-      setTradeIntentState(data);
+      setTradeIntentState({
+        ...data,
+        message: data.intent
+          ? `Intent staged: ${formatIntentSide(data.intent)} / ${data.intent.executionState.replaceAll("_", " ")} / ${formatStake(data.intent.stakeUsdc)}.`
+          : data.message,
+      });
       if (data.ledger) setIntentLedgerState(data.ledger);
       await refreshReviewPack();
       await refreshPolicy();
@@ -1783,7 +1828,12 @@ export function Dashboard({
         return;
       }
 
-      setTradeIntentState(data);
+      setTradeIntentState({
+        ...data,
+        message: data.intent
+          ? `Intent staged: ${formatIntentSide(data.intent)} / ${data.intent.executionState.replaceAll("_", " ")} / ${formatStake(data.intent.stakeUsdc)}.`
+          : data.message,
+      });
       if (data.ledger) setIntentLedgerState(data.ledger);
       await refreshReviewPack();
       await refreshPolicy();
@@ -2112,7 +2162,9 @@ export function Dashboard({
       setRecordedIntentReceiptState(data);
       setTradeIntentState((current) => ({
         ...current,
-        message: undefined,
+        message: data.receipt?.transactionHash
+          ? `Arc proof recorded: ${data.receipt.transactionHash.slice(0, 10)}...`
+          : "Arc proof recorded.",
       }));
       await refreshReviewPack();
       await refreshRecordedIntentReceipt();
@@ -2190,6 +2242,7 @@ export function Dashboard({
           onSelectThread={selectChatThread}
           onSelectMarket={selectMarketRecent}
           onDeleteThread={deleteChatThread}
+          onDeleteMarket={deleteMarketRecent}
         />
 
         <DemoBudgetPanel />
@@ -2414,6 +2467,7 @@ function SidebarRecents({
   onSelectThread,
   onSelectMarket,
   onDeleteThread,
+  onDeleteMarket,
 }: {
   threads: ChatThread[];
   marketRecents: MarketRecent[];
@@ -2425,6 +2479,7 @@ function SidebarRecents({
   onSelectThread: (threadId: string) => void;
   onSelectMarket: (marketId: string) => void;
   onDeleteThread: (threadId: string) => void;
+  onDeleteMarket: (marketId: string) => void;
 }) {
   const [showAnalyzedMarkets, setShowAnalyzedMarkets] = useState(false);
 
@@ -2492,6 +2547,17 @@ function SidebarRecents({
                             title={`${market.title} - ${market.venue}`}
                           >
                             {market.title}
+                          </button>
+                          <button
+                            type="button"
+                            className="mi-recentDelete"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDeleteMarket(market.id);
+                            }}
+                            title="Delete analyzed market"
+                          >
+                            <Trash2 size={12} />
                           </button>
                         </motion.div>
                       ))}
@@ -2689,7 +2755,7 @@ function ChatMessageBubble({
               <p>
               {hasPaidResearch
                 ? "Base research is preserved for comparison. The x402 upgrade uses paid services directly, then runs the source, risk, policy, and quality review without sending paid results back through OpenDeepSearch."
-                : "OpenDeepSearch, source scoring, ROMA-style review, and safety checks are combined before any manual intent can be staged."}
+                : "OpenDeepSearch, source scoring, ROMA review, and safety checks are combined before any manual intent can be staged."}
             </p>
             {run.paidResearch && paidServicesForRun.length > 0 ? (
               <details className="mi-details">
@@ -3196,7 +3262,7 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
           <span>Base layer</span>
           <strong>{base ? formatActionLabel(base.recommendation) : formatActionLabel(run.action)}</strong>
           <p>
-            OpenDeepSearch, registered sources, ROMA-style review, and optional CryptoAnalystBench check.
+            OpenDeepSearch, registered sources, ROMA review, and optional CryptoAnalystBench check.
           </p>
           <small>{base ? `${formatPercent(base.confidence)} confidence` : `${run.marketResearch?.sourceLinks.length ?? 0} source links`}</small>
         </div>
@@ -4454,6 +4520,11 @@ function MarketsPage({
                 Stage NO intent
               </button>
             </div>
+            {tradeIntent.message ? (
+              <div className={tradeIntent.status === "error" ? "mi-inlineNotice error" : "mi-inlineNotice"}>
+                {cleanUserFacingText(tradeIntent.message)}
+              </div>
+            ) : null}
             {selectedIntent ? (
               <div className="mi-proofPrompt">
                 <p>
@@ -4473,6 +4544,7 @@ function MarketsPage({
                     Open Arc proof
                   </a>
                 ) : null}
+                <InlineProofStatus receipt={receipt} intentId={selectedIntent.id} />
               </div>
             ) : null}
           </section>
@@ -5609,12 +5681,12 @@ function cleanUserFacingText(value: string) {
     .replace(/â€¦/g, "...")
     .replace(/ğŸ[\s\S]{0,4}/g, "")
     .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
+    .replace(/ROMA-style/gi, "ROMA")
+    .replace(/Safety review-style/gi, "ROMA")
     .replace(/ROMA\/Sentient|Sentient\/ROMA/g, "ROMA")
     .replace(/\bSentient\b/g, "research stack")
     .replace(/\bsentient\b/g, "research stack")
-    .replace(/\bOpenDeepSearch\b/g, "Web research")
-    .replace(/\bROMA safety review\b/g, "Safety review")
-    .replace(/\bROMA\b/g, "Safety review")
+    .replace(/\bROMA safety review\b/g, "ROMA review")
     .replace(/\bprovider gap(?:s)?\b/gi, "data gap")
     .replace(/Payment details saved to:\s*\S+/gi, "")
     .replace(/PAYMENT (?:WAS |MAY HAVE BEEN )SUBMITTED[^.]*\./gi, "")
@@ -5742,7 +5814,7 @@ function buildPaidResearchTrace(
     {
       label: "Research ingestion",
       detail:
-        "Sending paid x402 evidence into the ROMA-style source, risk, policy, and quality review. OpenDeepSearch is not re-run in this upgrade layer.",
+        "Sending paid x402 evidence into the ROMA source, risk, policy, and quality review. OpenDeepSearch is not re-run in this upgrade layer.",
       status: completed ? "done" : blocked ? "blocked" : "queued",
     },
     {

@@ -1,4 +1,5 @@
 import type { SourceRegistryInput } from "@/src/product/sourceRegistry";
+import { turkeyCuratedSources } from "@/src/product/turkeyCuratedSources";
 
 export const turkeyStarterSources: SourceRegistryInput[] = [
   {
@@ -44,4 +45,5 @@ export const turkeyStarterSources: SourceRegistryInput[] = [
     notes:
       "Used only for alerts until corroborated by paid trade-flow data or official operator/match sources.",
   },
+  ...turkeyCuratedSources,
 ];

@@ -42,7 +42,7 @@ export type TradeIntent = {
 export function buildTradeIntent(input: IntentRequest): TradeIntent {
   const requestedSide = input.requestedSide ?? "AUTO";
   const sizing = applyRequestedSide(estimatePositionSize(input), requestedSide);
-  const riskGate = readRiskGate(input.risk, sizing);
+  const riskGate = readRiskGate(input.risk, sizing, input.requestedAction);
   const executionState = readExecutionState(input.requestedAction, riskGate);
 
   return {
@@ -92,8 +92,12 @@ function applyRequestedSide(
   };
 }
 
-function readRiskGate(risk: IntentRequest["risk"], sizing: PositionSizingResult) {
-  if (risk === "High") return "blocked";
+function readRiskGate(
+  risk: IntentRequest["risk"],
+  sizing: PositionSizingResult,
+  requestedAction: IntentRequest["requestedAction"],
+) {
+  if (risk === "High") return requestedAction === "APPROVE_INTENT" ? "blocked" : "review";
   if (risk === "Medium" || sizing.side === "NONE") return "review";
   return "open";
 }

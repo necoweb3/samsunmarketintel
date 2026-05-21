@@ -239,12 +239,12 @@ function buildModelPrompt({
           ? {
               name: "x402_upgrade",
               instruction:
-                "This is the paid x402 upgrade layer. Do not assume a fresh OpenDeepSearch pass ran here. Use paidX402Research as the new evidence, compare it against the baseline analysis when present, then run the ROMA-style source/risk/policy review and optional crypto quality check.",
+                "This is the paid x402 upgrade layer. Do not assume a fresh OpenDeepSearch pass ran here. Use paidX402Research as the new evidence, compare it against the baseline analysis when present, then run the ROMA source/risk/policy review and optional crypto quality check.",
             }
           : {
               name: "base",
               instruction:
-                "This is the base layer. Use OpenDeepSearch/registered-source context first, then ROMA-style source/risk/policy review and optional crypto quality check.",
+                "This is the base layer. Use OpenDeepSearch/registered-source context first, then ROMA source/risk/policy review and optional crypto quality check.",
             },
       strictRules: [
         "Manual mode only.",

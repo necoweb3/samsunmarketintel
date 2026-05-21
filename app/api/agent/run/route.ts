@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { requestLiveAgentModelAnalysis } from "@/src/product/agentModelAnalysis";
 import { readAgentBankrollUsdc } from "@/src/product/agentBankroll";
-import { appendAgentRun, readAgentRunLedger } from "@/src/product/agentRunLedger";
+import { appendAgentRun, readAgentRunLedger, removeAgentRunsByMarketId } from "@/src/product/agentRunLedger";
 import { applyModelAnalysisToAgentRun, buildAgentRun, type AgentMarketResearch } from "@/src/product/agentRun";
 import { evaluateCryptoAnalystBench } from "@/src/product/cryptoAnalystBench";
 import { readIntentLedger } from "@/src/product/intentLedger";
@@ -46,6 +46,39 @@ export async function GET() {
     {
       status: "ok",
       ...ledger,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+const deleteRunSchema = z.object({
+  marketId: z.string().min(1),
+});
+
+export async function DELETE(request: Request) {
+  const parsed = deleteRunSchema.safeParse(await request.json().catch(() => null));
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        status: "error",
+        message: "Invalid run deletion request.",
+        issues: parsed.error.issues,
+      },
+      { status: 400 },
+    );
+  }
+
+  const ledger = await removeAgentRunsByMarketId(parsed.data.marketId);
+
+  return NextResponse.json(
+    {
+      status: "ok",
+      ledger,
     },
     {
       headers: {

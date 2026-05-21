@@ -2435,6 +2435,24 @@
   border-radius: 8px;
 }
 
+.mi-inlineNotice {
+  margin-top: 10px;
+  padding: 9px 10px;
+  color: #12385b;
+  background: #f5faff;
+  border: 1px solid #d4e7fb;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.mi-inlineNotice.error {
+  color: #7a1720;
+  background: #fff5f5;
+  border-color: #ffc9cf;
+}
+
 .mi-x402Complete {
   display: flex;
   align-items: center;

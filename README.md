@@ -273,7 +273,7 @@ Arc is valuable here because:
 - It provides a fast, low-cost proof layer for agent decisions.
 - It aligns with a stablecoin-native agent economy.
 
-> While building Samsun Market Intel, I also integrated Sentient's open-source tools. These are:
+### While building Samsun Market Intel, I also integrated Sentient's open-source tools. These are:
 
 ### OpenDeepSearch
 
@@ -360,7 +360,7 @@ Observed practical ranges:
 - Current service-max estimate for the configured paid bundle: about `4.95 USDC`.
 - Recent local demo receipts that included parseable x402 payment amounts ranged roughly from `$0.07` to `$0.40` per upgrade, with an average around `$0.16` across local cached runs. This is lower than the approved cap because providers often charge below the max amount and some exact-market endpoints are skipped when the market does not expose the needed condition/token identifiers.
 
-x402 calls in the product run with manual approval. Before the paid pass starts, the backend checks Circle Gateway spendable balance and blocks the upgrade if the balance is too low. Position sizing uses the live agent bankroll from Gateway/wallet balance when available; it no longer assumes a fixed `100 USDC` bankroll.
+x402 calls in the product run with manual approval. Before the paid pass starts, the backend checks Circle Gateway spendable balance and blocks the upgrade if the balance is too low. Position sizing uses the live agent bankroll from Gateway/wallet balance when available.
 
 ## Setup
 

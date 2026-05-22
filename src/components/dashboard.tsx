@@ -2776,6 +2776,7 @@ function ChatMessageBubble({
       : null;
   const paidServicesForRun = run ? visiblePaidResearchServices(run) : [];
   const hasPaidResearch = Boolean(run?.paidResearch);
+  const isDraftRun = run ? isDraftMarketRun(run) : false;
   const manualLeanNote = run ? buildManualLeanNote(run) : null;
   const tradePlan = run?.modelAnalysis?.tradePlan ?? null;
   const agentIntentLabel = formatAgentIntentLabel(tradePlan, recommendedSide);
@@ -2803,9 +2804,9 @@ function ChatMessageBubble({
             />
             <DataPoint label="Stake" value={formatStake(run.sizing.stakeUsdc)} />
           </div>
-          <IntegrityBadge run={run} />
+          {!isDraftRun ? <IntegrityBadge run={run} /> : null}
           <ConfidenceBreakdown run={run} />
-          <TradePlanCard run={run} />
+          {isDraftRun ? <MarketIdeaDesignCard run={run} /> : <TradePlanCard run={run} />}
 
           {run.modelAnalysis?.thesis ? (
             <section>
@@ -2843,7 +2844,7 @@ function ChatMessageBubble({
                     <div className={`mi-paidService ${service.status}`} key={service.id}>
                       <strong>{service.name}</strong>
                       <span>
-                        {service.provider} / {formatPaidServiceStatusLabel(service.status)}
+                        {service.provider} / {formatPaidServiceStatusLabel(service)}
                         {service.durationMs ? ` / ${formatDuration(service.durationMs)}` : ""}
                       </span>
                       <p>{formatPaidServiceSummary(service)}</p>
@@ -2873,9 +2874,11 @@ function ChatMessageBubble({
           <section className="mi-chatActionPanel">
             <div className="mi-manualDecisionHeader">
               <div>
-                <strong>Manual decision flow</strong>
+                <strong>{isDraftRun ? "Market idea follow-up" : "Manual decision flow"}</strong>
                 <p>
-                  Choose the next action. The agent can stage an intent and record proof, but it will not execute a wallet trade by itself.
+                  {isDraftRun
+                    ? "Save this idea to watch, then refine the contract wording and resolution source before launch."
+                    : "Choose the next action. The agent can stage an intent and record proof, but it will not execute a wallet trade by itself."}
                 </p>
               </div>
               <div className="mi-decisionPrompt">
@@ -2924,22 +2927,26 @@ function ChatMessageBubble({
                 <Radar size={14} />
                 Watch
               </button>
-              <button
-                type="button"
-                className="mi-actionPrimary"
-                onClick={() => onStageRunIntent(run, "APPROVE_INTENT", recommendedSide === "NONE" ? "AUTO" : recommendedSide)}
-                disabled={!canStageBet}
-                title={canStageBet ? agentIntentLabel : "No positive sized edge is available."}
-              >
-                <WalletCards size={14} />
-                {agentIntentLabel}
-              </button>
-              <button type="button" className="mi-actionStrong" onClick={() => onStageRunIntent(run, "APPROVE_INTENT", "YES")}>
-                Stage YES intent
-              </button>
-              <button type="button" className="mi-actionStrong" onClick={() => onStageRunIntent(run, "APPROVE_INTENT", "NO")}>
-                Stage NO intent
-              </button>
+              {!isDraftRun ? (
+                <>
+                  <button
+                    type="button"
+                    className="mi-actionPrimary"
+                    onClick={() => onStageRunIntent(run, "APPROVE_INTENT", recommendedSide === "NONE" ? "AUTO" : recommendedSide)}
+                    disabled={!canStageBet}
+                    title={canStageBet ? agentIntentLabel : "No positive sized edge is available."}
+                  >
+                    <WalletCards size={14} />
+                    {agentIntentLabel}
+                  </button>
+                  <button type="button" className="mi-actionStrong" onClick={() => onStageRunIntent(run, "APPROVE_INTENT", "YES")}>
+                    Stage YES intent
+                  </button>
+                  <button type="button" className="mi-actionStrong" onClick={() => onStageRunIntent(run, "APPROVE_INTENT", "NO")}>
+                    Stage NO intent
+                  </button>
+                </>
+              ) : null}
             </div>
             {latestIntentForRun ? (
               <div className="mi-proofPrompt">
@@ -3013,6 +3020,8 @@ function AgentTrace({
 
 function buildTraceAttentionTitle(steps: AgentTraceStep[]) {
   const visibleProblems = steps.filter((step) => step.status === "blocked");
+  const rateLimited = visibleProblems.filter((step) => /rate limit|429/i.test(`${step.label} ${step.detail}`));
+  if (rateLimited.length > 0) return `x402 rate limited: ${rateLimited.length} service${rateLimited.length === 1 ? "" : "s"}`;
   const dataGaps = visibleProblems.filter((step) => /gap|skipped|unusable|error|failed/i.test(`${step.label} ${step.detail}`));
   if (dataGaps.length > 0) return `x402 partial: ${dataGaps.length} data gap${dataGaps.length === 1 ? "" : "s"}`;
   return "Review needed";
@@ -3116,6 +3125,43 @@ function EvidenceList({ title, items }: { title: string; items: string[] }) {
       ) : (
         <span>Not enough evidence yet.</span>
       )}
+    </section>
+  );
+}
+
+function isDraftMarketRun(run: AgentRunRecord) {
+  return run.venue === "Draft" || run.analysis?.marketProbability === null || run.analysis?.marketProbability === undefined;
+}
+
+function MarketIdeaDesignCard({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
+  const plan = run.modelAnalysis?.tradePlan ?? null;
+  const alternative = plan?.alternative ?? "Draft a binary, dated market with an official resolution source before launch.";
+  const guardrail =
+    plan?.hedgeOrExit ??
+    "Use official court, party, regulator, exchange, or government records first; treat social posts as demand context only.";
+
+  return (
+    <section className={compact ? "mi-tradePlanCard compact idea" : "mi-tradePlanCard idea"}>
+      <div className="mi-tradePlanHeader">
+        <div>
+          <span>Market design</span>
+          <strong>Proposal brief</strong>
+        </div>
+        <span>Research more</span>
+      </div>
+
+      {plan?.rationale ? <p>{cleanUserFacingText(plan.rationale)}</p> : null}
+
+      <div className="mi-tradePlanNotes">
+        <div>
+          <strong>Suggested market shape</strong>
+          <span>{cleanUserFacingText(alternative)}</span>
+        </div>
+        <div>
+          <strong>Resolution guardrail</strong>
+          <span>{cleanUserFacingText(guardrail)}</span>
+        </div>
+      </div>
     </section>
   );
 }
@@ -3351,7 +3397,8 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
   const base = run.baselineAnalysis;
   const upgraded = run.modelAnalysis;
   const services = visiblePaidResearchServices(run);
-  const ok = services.filter((service) => service.status === "ok").length;
+  const attemptedServices = services.filter((service) => service.status !== "skipped");
+  const ok = attemptedServices.filter((service) => service.status === "ok").length;
   const deepOk = services.some(
     (service) => service.phase === "deep_research" && service.status === "ok",
   );
@@ -3379,14 +3426,18 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
           <span>x402 upgrade</span>
           <strong>{upgraded ? formatActionLabel(upgraded.recommendation) : formatActionLabel(run.action)}</strong>
           <p>
-            {ok}/{services.length} paid services returned usable data{deepOk ? ", including Deep Research" : ""}.
+            {ok}/{attemptedServices.length || services.length} paid services returned usable data{deepOk ? ", including Deep Research" : ""}.
           </p>
           <small>{upgraded ? `${formatPercent(upgraded.confidence)} confidence` : "review-first"}</small>
         </div>
       </div>
 
       <div className="mi-layerDeltaGrid">
-        <span>New paid signals: market/orderbook data, holder-flow when available, recent X engagement, and cited paid research.</span>
+        <span>
+          {ok > 0
+            ? "New paid signals: market/orderbook data, holder-flow when available, recent X engagement, and cited paid research."
+            : "No paid provider data was usable in this pass; keep the base analysis and retry after the x402 cooldown."}
+        </span>
         <span>Execution remains manual: x402 can improve confidence and side selection, but it cannot place a bet by itself.</span>
       </div>
 
@@ -3457,6 +3508,7 @@ function X402PaymentRecords({ run, compact = false }: { run: AgentRunRecord; com
 }
 
 function MarketFlowSnapshot({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
+  if (isDraftMarketRun(run)) return null;
   const snapshot = buildHolderFlowSnapshot(run);
 
   if (!snapshot) return null;
@@ -3594,7 +3646,13 @@ type SocialPost = {
 type PaidResearchService = NonNullable<AgentRunRecord["paidResearch"]>["services"][number];
 
 function visiblePaidResearchServices(run: AgentRunRecord) {
-  return run.paidResearch?.services.filter(isVisiblePaidResearchService) ?? [];
+  const services = run.paidResearch?.services.filter(isVisiblePaidResearchService) ?? [];
+  if (!isDraftMarketRun(run)) return services;
+  return services.filter(
+    (service) =>
+      service.status !== "skipped" ||
+      !/market-idea brief|without a live Polymarket event|condition\/token IDs|not crypto/i.test(service.summary),
+  );
 }
 
 function isVisiblePaidResearchService(service: PaidResearchService) {
@@ -3609,16 +3667,20 @@ function isVisiblePaidResearchService(service: PaidResearchService) {
 
 function formatPaidResearchCompletion(services: PaidResearchService[]) {
   if (services.length === 0) return "Paid pass completed; no visible provider rows were returned.";
-  const ok = services.filter((service) => service.status === "ok").length;
-  return `${ok}/${services.length} services returned usable data.`;
+  const attempted = services.filter((service) => service.status !== "skipped");
+  const ok = attempted.filter((service) => service.status === "ok").length;
+  const skipped = services.length - attempted.length;
+  return `${ok}/${attempted.length || services.length} services returned usable data${skipped ? `; ${skipped} skipped as not applicable` : ""}.`;
 }
 
 function buildPaidResearchImpact(run: AgentRunRecord) {
   const services = visiblePaidResearchServices(run);
   if (!run.paidResearch || services.length === 0) return [];
 
-  const ok = services.filter((service) => service.status === "ok").length;
-  const errors = services.filter((service) => service.status === "error").length;
+  const attemptedServices = services.filter((service) => service.status !== "skipped");
+  const ok = attemptedServices.filter((service) => service.status === "ok").length;
+  const errors = attemptedServices.filter((service) => service.status === "error").length;
+  const skipped = services.length - attemptedServices.length;
   const actualPaid =
     typeof run.paidResearch.actualPaidUsdc === "number" ? run.paidResearch.actualPaidUsdc : null;
   const beforeDecision = formatActionLabel(run.baselineAnalysis?.recommendation ?? run.action);
@@ -3641,11 +3703,11 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
     },
     {
       label: "Paid coverage",
-      value: actualPaid !== null ? `$${actualPaid.toFixed(4)} paid` : `${ok}/${services.length} usable`,
+      value: actualPaid !== null ? `$${actualPaid.toFixed(4)} paid` : `${ok}/${attemptedServices.length || services.length} usable`,
       detail:
         errors > 0
-          ? `${ok}/${services.length} usable; ${errors} data gap${errors === 1 ? "" : "s"} kept as missing evidence, not as proof.`
-          : `${ok}/${services.length} paid services returned without visible data gaps.`,
+          ? `${ok}/${attemptedServices.length || services.length} usable; ${errors} data gap${errors === 1 ? "" : "s"} kept as missing evidence, not as proof${skipped ? `; ${skipped} skipped as not applicable.` : "."}`
+          : `${ok}/${attemptedServices.length || services.length} paid services returned without visible data gaps${skipped ? `; ${skipped} skipped as not applicable.` : "."}`,
     },
     {
       label: "Holder flow",
@@ -3668,7 +3730,8 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
 
 function buildManualLeanNote(run: AgentRunRecord) {
   const recommendation = run.modelAnalysis?.recommendation ?? run.action;
-  if (recommendation !== "WAIT" && recommendation !== "RESEARCH_MORE") return null;
+  if (isDraftMarketRun(run) || recommendation === "RESEARCH_MORE") return null;
+  if (recommendation !== "WAIT") return null;
 
   const explicitNote = run.modelAnalysis?.policyNotes.find((note) =>
     /still trade manually|cleaner lean|manual lean/i.test(note),
@@ -3764,6 +3827,9 @@ function buildSocialEngagementSnapshot(run: AgentRunRecord) {
     .filter((post) => isFreshSocialPost(post, now) && post.engagement > 0)
     .sort((a, b) => b.engagement - a.engagement)
     .slice(0, 5);
+  const errorService = services.find((service) => service.status === "error");
+  const okService = services.find((service) => service.status === "ok");
+  if (posts.length === 0 && !okService) return null;
 
   return {
     status: posts.length > 0 ? "live x402" : "no posts",
@@ -3772,7 +3838,7 @@ function buildSocialEngagementSnapshot(run: AgentRunRecord) {
         ? "Top returned X posts from the last 45 days by visible engagement. Treat as sentiment/context, not proof."
         : "Paid X search ran, but no recent dated posts with visible engagement were returned.",
     detail:
-      services.find((service) => service.status === "error")?.error ??
+      errorService ? formatPaidServiceSummary(errorService) :
       "No recent X posts with visible engagement were returned by the paid provider for this query.",
     posts,
   };
@@ -4056,9 +4122,13 @@ function buildEvidenceDrawerItems(run: AgentRunRecord) {
   }
 
   if (failedServices.length) {
+    const rateLimited = failedServices.filter((service) => /rate limit|429/i.test(`${service.error ?? ""} ${service.summary}`));
     items.push({
-      title: "Data gaps",
-      detail: `${failedServices.length} paid service(s) failed or returned unusable data. The analysis should not treat missing provider data as evidence.`,
+      title: rateLimited.length === failedServices.length ? "x402 rate limit" : "Data gaps",
+      detail:
+        rateLimited.length === failedServices.length
+          ? `${failedServices.length} paid service(s) were rate-limited before provider data returned. Retry after a short cooldown; this is not evidence for either side.`
+          : `${failedServices.length} paid service(s) failed or returned unusable data. The analysis should not treat missing provider data as evidence.`,
     });
   }
 
@@ -4377,6 +4447,7 @@ function MarketsPage({
   const selectedAgentIntentLabel = selectedRun
     ? formatAgentIntentLabel(selectedRun.modelAnalysis?.tradePlan, selectedRecommendedSide)
     : "Use agent side intent";
+  const selectedIsDraftRun = selectedRun ? isDraftMarketRun(selectedRun) : selectedMarket?.venue === "Draft";
   const selectedIntent =
     selectedRun && tradeIntent.intent?.marketId === selectedRun.marketId
       ? tradeIntent.intent
@@ -4520,9 +4591,11 @@ function MarketsPage({
               value={selectedRun ? formatStake(sizing?.stakeUsdc ?? selectedRun.sizing.stakeUsdc) : "n/a"}
             />
           </div>
-          {selectedRun ? <IntegrityBadge run={selectedRun} compact /> : null}
+          {selectedRun && !selectedIsDraftRun ? <IntegrityBadge run={selectedRun} compact /> : null}
           {selectedRun ? <ConfidenceBreakdown run={selectedRun} compact /> : null}
-          {selectedRun ? <TradePlanCard run={selectedRun} compact /> : null}
+          {selectedRun ? (
+            selectedIsDraftRun ? <MarketIdeaDesignCard run={selectedRun} compact /> : <TradePlanCard run={selectedRun} compact />
+          ) : null}
 
           <section className="mi-reportBlock">
             <div className="mi-blockHeader">
@@ -4596,7 +4669,9 @@ function MarketsPage({
             </div>
             <p>
               {selectedRun
-                ? "Pick the next action. The agent can stage a manual intent and record an Arc proof; wallet execution remains disabled."
+                ? selectedIsDraftRun
+                  ? "Save this idea to watch, then refine the contract wording and resolution source before launch."
+                  : "Pick the next action. The agent can stage a manual intent and record an Arc proof; wallet execution remains disabled."
                 : "Analyze this market first; intent staging stays locked until the agent produces a fresh recommendation."}
             </p>
             {runState === "running" && activeTrace.length > 0 ? (
@@ -4636,24 +4711,28 @@ function MarketsPage({
                 <Radar size={14} />
                 Watch
               </button>
-              <button
-                type="button"
-                className="mi-actionPrimary"
-                onClick={() => onStageIntent("APPROVE_INTENT", selectedRecommendedSide === "NONE" ? "AUTO" : selectedRecommendedSide)}
-                disabled={!selectedRun || selectedRecommendedSide === "NONE"}
-                title={selectedRun && selectedRecommendedSide !== "NONE" ? selectedAgentIntentLabel : "No positive sized edge is available."}
-              >
-                <WalletCards size={14} />
-                {selectedAgentIntentLabel}
-              </button>
-              <button type="button" className="mi-actionStrong" onClick={() => onStageIntent("APPROVE_INTENT", "YES")} disabled={!selectedRun}>
-                <WalletCards size={14} />
-                Stage YES intent
-              </button>
-              <button type="button" className="mi-actionStrong" onClick={() => onStageIntent("APPROVE_INTENT", "NO")} disabled={!selectedRun}>
-                <WalletCards size={14} />
-                Stage NO intent
-              </button>
+              {!selectedIsDraftRun ? (
+                <>
+                  <button
+                    type="button"
+                    className="mi-actionPrimary"
+                    onClick={() => onStageIntent("APPROVE_INTENT", selectedRecommendedSide === "NONE" ? "AUTO" : selectedRecommendedSide)}
+                    disabled={!selectedRun || selectedRecommendedSide === "NONE"}
+                    title={selectedRun && selectedRecommendedSide !== "NONE" ? selectedAgentIntentLabel : "No positive sized edge is available."}
+                  >
+                    <WalletCards size={14} />
+                    {selectedAgentIntentLabel}
+                  </button>
+                  <button type="button" className="mi-actionStrong" onClick={() => onStageIntent("APPROVE_INTENT", "YES")} disabled={!selectedRun}>
+                    <WalletCards size={14} />
+                    Stage YES intent
+                  </button>
+                  <button type="button" className="mi-actionStrong" onClick={() => onStageIntent("APPROVE_INTENT", "NO")} disabled={!selectedRun}>
+                    <WalletCards size={14} />
+                    Stage NO intent
+                  </button>
+                </>
+              ) : null}
             </div>
             {tradeIntent.message ? (
               <div className={tradeIntent.status === "error" ? "mi-inlineNotice error" : "mi-inlineNotice"}>
@@ -5854,6 +5933,10 @@ function cleanUserFacingText(value: string) {
     .replace(/Error:\s*Payment submitted but request failed[^.]*\./gi, "This provider did not return usable data.")
     .replace(/Error:\s*Payment submitted but paid request failed[^.]*\./gi, "This provider did not return usable data.")
     .replace(/Server response:\s*[^.]+/gi, "")
+    .replace(/\bMARKET IDEA\s*\/\s*review:\s*/gi, "")
+    .replace(/\bNo live venue price exists,?\s*so this is a market-design brief rather than a YES\/NO bet\.?\s*/gi, "")
+    .replace(/\bAs this is a Draft market with no live venue price,\s*this is a market-design intelligence brief rather than a trade recommendation\.?\s*/gi, "")
+    .replace(/\bThe market is currently a Draft\.?\s*/gi, "")
     .replace(/\b(\d{1,3})%\s+YES implied probability\b/gi, "$1¢ YES quote")
     .replace(/\b(\d{1,3})%\s+implied probability\b/gi, "$1¢ price-implied estimate")
     .replace(/\bpriced in at\s+(\d{1,3})%\b/gi, "priced near a $1¢ YES quote")
@@ -6007,6 +6090,13 @@ function formatPaidServiceSummary(
   }
 
   if (service.status === "error") {
+    const detail = `${service.error ?? ""} ${service.summary ?? ""}`;
+    if (/rate limit|429/i.test(detail)) {
+      return "Circle x402 rate limit hit before provider data was returned. Retry after a short cooldown.";
+    }
+    if (/HTML error page|<!doctype|<html/i.test(detail)) {
+      return "The x402 gateway returned an error page instead of provider data. Retry shortly.";
+    }
     return "Provider did not return usable data for this market. This is tracked as a data gap, not evidence for either side.";
   }
 
@@ -6030,10 +6120,13 @@ function formatPaidServiceSummary(
 }
 
 function formatPaidServiceStatusLabel(
-  status: NonNullable<AgentRunRecord["paidResearch"]>["services"][number]["status"],
+  service: NonNullable<AgentRunRecord["paidResearch"]>["services"][number],
 ) {
-  if (status === "error") return "data gap";
-  if (status === "skipped") return "skipped";
+  if (service.status === "error" && /rate limit|429/i.test(`${service.error ?? ""} ${service.summary ?? ""}`)) {
+    return "rate limited";
+  }
+  if (service.status === "error") return "data gap";
+  if (service.status === "skipped") return "skipped";
   return "ok";
 }
 

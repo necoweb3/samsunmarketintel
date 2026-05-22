@@ -201,7 +201,7 @@ export async function requestLiveAgentModelAnalysis({
         paidResearch: paidResearch ?? null,
         analysisLayer,
       },
-    ), input, analysisLayer);
+    ), input, analysisLayer, paidResearch ?? null);
 
     return {
       status: "ok",
@@ -921,7 +921,7 @@ function buildPaidUpgradeFallbackAnalysis({
     input,
     paidResearch,
     analysisLayer: "x402_upgrade",
-  }), input, "x402_upgrade");
+  }), input, "x402_upgrade", paidResearch);
 
   return {
     status: "ok",
@@ -964,28 +964,27 @@ function adaptDraftMarketAnalysis(
   analysis: ParsedModelAnalysis,
   input: AgentRunInput,
   analysisLayer: "base" | "x402_upgrade",
+  paidResearch: LiveX402ResearchSummary | null = null,
 ): ParsedModelAnalysis {
   if (input.venue !== "Draft" && input.marketProbability !== null) return analysis;
 
   const isPaid = analysisLayer === "x402_upgrade";
-  const confidence = Math.max(analysis.confidence, isPaid ? 0.72 : 0.62);
-  const summaryPrefix = isPaid
-    ? "MARKET IDEA / review: Paid research surfaced current evidence for a possible market, but no live venue price exists."
-    : "MARKET IDEA / review: No live venue price exists, so this is a market-design brief rather than a YES/NO bet.";
+  const usablePaidServices = paidResearch?.services.filter((service) => service.status === "ok").length ?? 0;
+  const confidence = isPaid && usablePaidServices === 0
+    ? Math.min(analysis.confidence, Math.max(input.confidence, 0.62))
+    : Math.max(analysis.confidence, isPaid ? 0.72 : 0.62);
   const ideaDriver =
-    "Convert the event into an objective market question with dated resolution criteria before any trade or proof flow.";
+    "The strongest market candidates are objective, dated events with a named resolution source.";
   const noPriceNote =
     "No listed Polymarket quote was provided; the agent cannot calculate tradable EV or recommend BET YES/BET NO.";
+  const cleanedSummary = cleanDraftMarketSummary(analysis.summary);
 
   return {
     ...analysis,
     recommendation: "RESEARCH_MORE",
     riskGate: "review",
     confidence,
-    summary: truncate(
-      `${summaryPrefix} ${analysis.summary.replace(/^(BET_YES|BET_NO|YES|NO|WAIT|RESEARCH_MORE)\s*\/\s*review:\s*/i, "").trim()}`,
-      900,
-    ),
+    summary: truncate(cleanedSummary || "This looks viable as a prediction-market idea if the contract is tied to objective, verifiable public records.", 900),
     keyDrivers: [ideaDriver, ...analysis.keyDrivers.filter((item) => item !== ideaDriver)].slice(0, 6),
     missingEvidence: [
       "A concrete market contract, outcome set, and resolution source.",
@@ -1006,12 +1005,22 @@ function adaptDraftMarketAnalysis(
       edge: null,
       confidence,
       rationale:
-        "This is an event-intelligence or market-idea request. Without a listed Polymarket quote, the agent can assess demand, evidence, resolution design, and risks, but not size a directional bet.",
+        "Assess demand, evidence quality, resolution design, and launch risk before turning this into a listed market.",
       alternative:
         "Draft a market such as a dated legal/political outcome, leadership status, resignation/removal question, or official-announcement question with a named resolution source.",
       hedgeOrExit: analysis.tradePlan?.hedgeOrExit ?? null,
     },
   };
+}
+
+function cleanDraftMarketSummary(value: string) {
+  return value
+    .replace(/^(BET_YES|BET_NO|YES|NO|WAIT|RESEARCH_MORE|MARKET IDEA)\s*\/\s*review:\s*/i, "")
+    .replace(/\bNo live venue price exists,?\s*so this is a market-design brief rather than a YES\/NO bet\.?\s*/gi, "")
+    .replace(/\bAs this is a Draft market with no live venue price,\s*this is a market-design intelligence brief rather than a trade recommendation\.?\s*/gi, "")
+    .replace(/\bThe market is currently a Draft\.?\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function buildPaidEvidenceDrivers(

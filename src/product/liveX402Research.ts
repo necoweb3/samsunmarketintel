@@ -9,8 +9,8 @@ import { resolveCircleCliPath } from "@/src/product/circleCli";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LIVE_X402_BUDGET_USDC = 6;
-const DEFAULT_X402_SERVICE_CONCURRENCY = 5;
-const DEFAULT_X402_SERVICE_DELAY_MS = 200;
+const DEFAULT_X402_SERVICE_CONCURRENCY = 3;
+const DEFAULT_X402_SERVICE_DELAY_MS = 450;
 
 export type LiveX402ServiceId =
   | "blockrun-polymarket-markets"
@@ -107,6 +107,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.05,
     purpose: "Refresh broad Polymarket market context for discovery and comparable questions.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "blockrun-polymarket-trades",
@@ -116,6 +117,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.05,
     purpose: "Refresh trade-flow context for suspicious wallet or one-sided flow checks.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "blockrun-polymarket-top-holders",
@@ -128,6 +130,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Fetch the largest position holders for this exact Polymarket market when a condition ID is available.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "blockrun-polymarket-orderbooks",
@@ -137,6 +140,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.05,
     purpose: "Fetch orderbook depth for the first returned Polymarket token when available.",
+    appliesTo: isListedPolymarketQuery,
     queryParams: (query) => ({
       token_id: extractFirstTokenId(query) ?? undefined,
       limit: 40,
@@ -153,6 +157,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.05,
     purpose: "Fetch historical price/volume candles for the exact market when a market hash is available.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "aisa-polymarket-market-price",
@@ -165,6 +170,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Fetch the most recent token-level Polymarket price for EV math cross-checking.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "aisa-polymarket-orderbooks",
@@ -174,6 +180,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Fetch latest token-level orderbook depth for sizing, slippage, and liquidity checks.",
+    appliesTo: isListedPolymarketQuery,
     queryParams: (query) => ({
       token_id: extractFirstTokenId(query) ?? undefined,
       limit: 60,
@@ -187,6 +194,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Find comparable markets for cross-market pricing and arbitrage checks.",
+    appliesTo: isListedPolymarketQuery,
   },
   {
     id: "blockrun-multisource-search",
@@ -210,6 +218,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Search live Polymarket listings from AIsa for price discovery and matching context.",
+    appliesTo: isListedPolymarketQuery,
     queryParams: (query) => ({
       search: compactSearchQuery(query),
       status: "open",
@@ -433,7 +442,10 @@ export async function runLiveX402Research({
           maxAmountUsdc: service.maxAmountUsdc,
           purpose: service.purpose,
           rawText: null,
-          summary: "Skipped because this market is not crypto, Web3, token, stablecoin, or onchain-related.",
+          summary:
+            service.id === "aisa-coingecko-categories"
+              ? "Skipped because this market is not crypto, Web3, token, stablecoin, or onchain-related."
+              : "Skipped because this request is a market-idea brief without a live Polymarket event or condition ID.",
           durationMs: 0,
         },
       });
@@ -665,12 +677,16 @@ async function payService({
       maxAmountUsdc: service.maxAmountUsdc,
       purpose: service.purpose,
       rawText,
-      summary: truncate(message, 900),
+      summary: summarizeX402Error(message),
       durationMs: Date.now() - startedAt,
-      error: truncate(message, 900),
+      error: summarizeX402Error(message),
       ...(payment ? { payment } : {}),
     };
   }
+}
+
+function isListedPolymarketQuery(query: string) {
+  return /Venue:\s*Polymarket\b/i.test(query) || /polymarket\.com\/event\//i.test(query);
 }
 
 function isCryptoRelevantQuery(query: string) {
@@ -765,12 +781,26 @@ function readPayloadError(rawText: string) {
         ?? getPath(parsed, ["data", "response", "error"]) ?? getPath(parsed, ["response", "error"])
       : null;
 
-    return typeof error === "string" && /error|too long|invalid|failed/i.test(error)
-      ? truncate(error, 900)
+    return typeof error === "string" && /error|too long|invalid|failed|429|rate limit/i.test(error)
+      ? summarizeX402Error(error)
       : null;
   } catch {
     return null;
   }
+}
+
+function summarizeX402Error(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (/429|rate limit|too many requests/i.test(normalized)) {
+    return "Circle x402 rate limit hit before provider data was returned. Retry after a short cooldown.";
+  }
+  if (/<!doctype html|<html/i.test(normalized)) {
+    return "The x402 gateway returned an HTML error page instead of provider data. Retry shortly.";
+  }
+  if (/could not sign payment authorization|Gateway batched payment signature/i.test(normalized)) {
+    return "Circle x402 payment authorization could not be signed. No provider data was returned.";
+  }
+  return truncate(normalized, 900);
 }
 
 function buildServiceUrl(service: ServicePlan, query: string) {

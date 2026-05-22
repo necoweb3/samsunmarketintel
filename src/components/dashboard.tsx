@@ -867,30 +867,37 @@ const plannedPaidResearchServices = [
   {
     label: "Polymarket markets",
     detail: "Fetching live market price, status, outcomes, and liquidity context.",
+    polymarketOnly: true,
   },
   {
     label: "Polymarket trades",
     detail: "Checking recent flow for one-sided bets, large wallets, and timing anomalies.",
+    polymarketOnly: true,
   },
   {
     label: "Polymarket top holders",
     detail: "Fetching largest returned wallets, side exposure, shares, and visible value for this exact market.",
+    polymarketOnly: true,
   },
   {
     label: "Polymarket orderbooks",
     detail: "Checking venue depth, latest orderbook shape, and possible slippage.",
+    polymarketOnly: true,
   },
   {
     label: "Polymarket candlesticks",
     detail: "Reading market price movement and volume history when a market hash is available.",
+    polymarketOnly: true,
   },
   {
     label: "AIsa Polymarket markets",
     detail: "Looking for matching Polymarket markets and venue pricing context.",
+    polymarketOnly: true,
   },
   {
     label: "AIsa Polymarket price/orderbook",
     detail: "Cross-checking token price and book depth through a second market-data provider.",
+    polymarketOnly: true,
   },
   {
     label: "Exa web search",
@@ -2795,8 +2802,8 @@ function ChatMessageBubble({
         <div className="mi-chatRunCard">
           <div className="mi-chatRunGrid">
             <DataPoint label="Decision" value={formatActionLabel(run.modelAnalysis?.recommendation ?? run.action)} />
-            <DataPoint label="Risk gate" value={run.modelAnalysis?.riskGate ?? run.riskGate} />
-            <DataPoint label="Venue price" value={formatRunMarketPrice(run)} />
+            <DataPoint label="Risk review" value={run.modelAnalysis?.riskGate ?? run.riskGate} />
+            <DataPoint label="Market price" value={formatRunMarketPrice(run)} />
             <DataPoint
               label="Confidence"
               value={formatPercent(run.modelAnalysis?.confidence ?? run.confidence)}
@@ -2828,16 +2835,16 @@ function ChatMessageBubble({
           <LayerComparisonPanel run={run} />
 
             <section>
-              <strong>Research path</strong>
+              <strong>How it was built</strong>
               <p>
               {hasPaidResearch
-                ? "Base research is preserved for comparison. The x402 upgrade uses paid services directly, then runs the source, risk, policy, and quality review without sending paid results back through OpenDeepSearch."
-                : "OpenDeepSearch, source scoring, ROMA review, and safety checks are combined before any manual intent can be staged."}
+                ? "The first answer is kept for comparison. The paid x402 layer adds fresh services, then ROMA reviews the evidence before the call is updated."
+                : "OpenDeepSearch gathers sources, then ROMA reviews source quality, risk, and resolution clarity before any manual action."}
             </p>
             {run.paidResearch && paidServicesForRun.length > 0 ? (
               <details className="mi-details">
                 <summary>
-                  Circle live x402 research ({run.paidResearch.status}, {paidServicesForRun.length} services, max {run.paidResearch.estimatedMaxSpendUsdc} USDC)
+                  x402 service details ({run.paidResearch.status}, {paidServicesForRun.length} services, max {run.paidResearch.estimatedMaxSpendUsdc} USDC)
                 </summary>
                 <div className="mi-paidServiceGrid">
                   {paidServicesForRun.map((service) => (
@@ -2891,7 +2898,7 @@ function ChatMessageBubble({
               <div className="mi-x402Complete">
                 <CheckCircle2 size={16} />
                 <div>
-                  <strong>x402 research complete</strong>
+                  <strong>Paid research complete</strong>
                   <span>{formatPaidResearchCompletion(paidServicesForRun)}</span>
                 </div>
               </div>
@@ -2905,7 +2912,7 @@ function ChatMessageBubble({
                 title={`Spend up to ${LIVE_X402_RESEARCH_BUDGET_USDC} USDC through Circle x402 marketplace services, then refresh the decision without re-running OpenDeepSearch.`}
               >
                 <Sparkles size={14} />
-                Upgrade with Circle x402 research
+                Upgrade with paid x402 research
               </button>
               </>
             )}
@@ -3130,7 +3137,7 @@ function EvidenceList({ title, items }: { title: string; items: string[] }) {
 }
 
 function isDraftMarketRun(run: AgentRunRecord) {
-  return run.venue === "Draft" || run.analysis?.marketProbability === null || run.analysis?.marketProbability === undefined;
+  return run.venue === "Draft";
 }
 
 function MarketIdeaDesignCard({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
@@ -3144,8 +3151,8 @@ function MarketIdeaDesignCard({ run, compact = false }: { run: AgentRunRecord; c
     <section className={compact ? "mi-tradePlanCard compact idea" : "mi-tradePlanCard idea"}>
       <div className="mi-tradePlanHeader">
         <div>
-          <span>Market design</span>
-          <strong>Proposal brief</strong>
+          <span>Market idea</span>
+          <strong>Design brief</strong>
         </div>
         <span>Research more</span>
       </div>
@@ -3187,7 +3194,7 @@ function TradePlanCard({ run, compact = false }: { run: AgentRunRecord; compact?
 
       <div className="mi-tradePlanGrid">
         <DataPoint label="Side" value={side} />
-        <DataPoint label="Venue quote" value={plan.marketQuote ?? formatRunMarketPrice(run)} />
+        <DataPoint label="Market quote" value={plan.marketQuote ?? formatRunMarketPrice(run)} />
         <DataPoint label="Fair probability" value={formatPercent(plan.fairProbability)} />
         <DataPoint label="Edge" value={formatEdge(displayedEdge)} />
         <DataPoint label="Plan confidence" value={formatPercent(plan.confidence)} />
@@ -3367,10 +3374,10 @@ function X402CostEstimate({ compact = false }: { compact?: boolean }) {
   return (
     <section className={compact ? "mi-x402Estimate compact" : "mi-x402Estimate"}>
       <div>
-        <strong>x402 upgrade estimate</strong>
+        <strong>Paid research estimate</strong>
         <p>
-          Paid context runs BlockRun, Tavily, Exa/Parallel, market-data, social services, and Perplexity Deep Research in parallel, then merges the evidence.
-          Gateway spendable balance is checked before the paid pass, so an empty wallet is blocked before services are called.
+          The paid x402 layer adds live market data, web/news search, social context, and Deep Research where useful.
+          Balance is checked first, so the upgrade is blocked before any service call if funds are unavailable.
         </p>
       </div>
       <div className="mi-x402EstimateGrid">
@@ -3379,11 +3386,11 @@ function X402CostEstimate({ compact = false }: { compact?: boolean }) {
           <b>{LIVE_X402_RESEARCH_BUDGET_USDC.toFixed(2)} USDC</b>
         </span>
         <span>
-          <small>Service max</small>
+          <small>Max service cost</small>
           <b>~{LIVE_X402_BUNDLE_MAX_USDC.toFixed(2)} USDC</b>
         </span>
         <span>
-          <small>Observed demo receipts</small>
+          <small>Typical demo cost</small>
           <b>{LIVE_X402_OBSERVED_RANGE} USDC</b>
         </span>
       </div>
@@ -3407,8 +3414,8 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
     <section className={compact ? "mi-layerComparison compact" : "mi-layerComparison"}>
       <div className="mi-layerComparisonHeader">
         <div>
-          <strong>Base vs x402 upgrade</strong>
-          <p>Use this section in the demo to show why the paid layer is more than a Google-style answer.</p>
+          <strong>Base vs paid upgrade</strong>
+          <p>Shows what changed after the x402 research layer.</p>
         </div>
         <span>{typeof run.paidResearch.actualPaidUsdc === "number" ? `$${run.paidResearch.actualPaidUsdc.toFixed(4)} paid` : "receipt tracked"}</span>
       </div>
@@ -3418,7 +3425,7 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
           <span>Base layer</span>
           <strong>{base ? formatActionLabel(base.recommendation) : formatActionLabel(run.action)}</strong>
           <p>
-            OpenDeepSearch, registered sources, ROMA review, and optional CryptoAnalystBench check.
+            OpenDeepSearch, saved sources, ROMA review, and optional CryptoAnalystBench check.
           </p>
           <small>{base ? `${formatPercent(base.confidence)} confidence` : `${run.marketResearch?.sourceLinks.length ?? 0} source links`}</small>
         </div>
@@ -3435,10 +3442,12 @@ function LayerComparisonPanel({ run, compact = false }: { run: AgentRunRecord; c
       <div className="mi-layerDeltaGrid">
         <span>
           {ok > 0
-            ? "New paid signals: market/orderbook data, holder-flow when available, recent X engagement, and cited paid research."
+            ? (run.venue === "Draft"
+                ? "New paid signals: fresh news, cited research, and recent X/social context when available."
+                : "New paid signals: market/orderbook data, holder flow when available, recent X engagement, and cited paid research.")
             : "No paid provider data was usable in this pass; keep the base analysis and retry after the x402 cooldown."}
         </span>
-        <span>Execution remains manual: x402 can improve confidence and side selection, but it cannot place a bet by itself.</span>
+        <span>Manual approval stays on: x402 can improve confidence and side selection, but it cannot place a bet by itself.</span>
       </div>
 
     </section>
@@ -3694,7 +3703,7 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
   const socialCount = social?.posts.length ?? 0;
   return [
     {
-      label: "Decision refresh",
+      label: "Updated call",
       value: beforeDecision === afterDecision ? `${afterDecision} stayed` : `${beforeDecision} -> ${afterDecision}`,
       detail:
         confidenceDelta === 0
@@ -3819,14 +3828,22 @@ function buildSocialEngagementSnapshot(run: AgentRunRecord) {
   if (services.length === 0) return null;
 
   const now = Date.now();
-  const posts = dedupeSocialPosts(
+  const returnedPosts = dedupeSocialPosts(
     services
       .filter((service) => service.status === "ok")
       .flatMap((service) => parseSocialPosts(service.rawText) ?? parseSocialPosts(service.summary) ?? []),
-  )
+  );
+  const freshPosts = returnedPosts
     .filter((post) => isFreshSocialPost(post, now) && post.engagement > 0)
     .sort((a, b) => b.engagement - a.engagement)
     .slice(0, 5);
+  const undatedPosts = freshPosts.length === 0
+    ? returnedPosts
+        .filter((post) => !post.createdAt && post.engagement > 0)
+        .sort((a, b) => b.engagement - a.engagement)
+        .slice(0, 5)
+    : [];
+  const posts = freshPosts.length > 0 ? freshPosts : undatedPosts;
   const errorService = services.find((service) => service.status === "error");
   const okService = services.find((service) => service.status === "ok");
   if (posts.length === 0 && !okService) return null;
@@ -3835,11 +3852,11 @@ function buildSocialEngagementSnapshot(run: AgentRunRecord) {
     status: posts.length > 0 ? "live x402" : "no posts",
     note:
       posts.length > 0
-        ? "Top returned X posts from the last 45 days by visible engagement. Treat as sentiment/context, not proof."
-        : "Paid X search ran, but no recent dated posts with visible engagement were returned.",
+        ? "Recent X posts returned by the paid search layer. Treat them as sentiment/context, not proof."
+        : "Paid X search ran, but no recent posts with visible engagement were returned.",
     detail:
       errorService ? formatPaidServiceSummary(errorService) :
-      "No recent X posts with visible engagement were returned by the paid provider for this query.",
+      "No recent X posts with visible engagement were returned for this query.",
     posts,
   };
 }
@@ -3848,11 +3865,17 @@ function parseSocialPosts(value: string | null | undefined): SocialPost[] | null
   const parsed = parsePaidJson(value);
   if (!parsed) return null;
   const payload = unwrapPaidPayload(parsed);
-  const tweets = Array.isArray(readPath(payload, ["tweets"]))
-    ? (readPath(payload, ["tweets"]) as unknown[])
-    : Array.isArray(payload)
-      ? payload
-      : [];
+  const tweets =
+    firstArrayAt(payload, [
+      ["tweets"],
+      ["data", "tweets"],
+      ["data", "items"],
+      ["data", "results"],
+      ["results"],
+      ["items"],
+      ["posts"],
+      ["statuses"],
+    ]) ?? (Array.isArray(payload) ? payload : []);
 
   const posts = tweets.map(normalizeSocialPost).filter(Boolean) as SocialPost[];
   return posts.length > 0 ? posts : null;
@@ -3860,7 +3883,10 @@ function parseSocialPosts(value: string | null | undefined): SocialPost[] | null
 
 function normalizeSocialPost(value: unknown): SocialPost | null {
   if (!isPlainObject(value)) return null;
-  const authorValue = readPath(value, ["author"]);
+  const authorValue =
+    readPath(value, ["author"]) ??
+    readPath(value, ["user"]) ??
+    readPath(value, ["core", "user_results", "result", "legacy"]);
   const authorName = isPlainObject(authorValue)
     ? firstKnownString(authorValue, ["name", "displayName", "userName", "screenName", "screen_name", "handle"])
     : typeof authorValue === "string"
@@ -3881,19 +3907,27 @@ function normalizeSocialPost(value: unknown): SocialPost | null {
         "picture",
       ])
     : null;
-  const text = firstKnownString(value, ["text", "full_text", "content", "description"]);
+  const text =
+    firstKnownString(value, ["text", "full_text", "content", "description"]) ??
+    firstKnownString((readPath(value, ["legacy"]) as Record<string, unknown>) ?? {}, ["full_text", "text"]);
   if (!text) return null;
 
-  const id = firstKnownString(value, ["id", "tweetId", "rest_id"]) ?? stableTextId(text);
+  const legacy = isPlainObject(readPath(value, ["legacy"])) ? readPath(value, ["legacy"]) as Record<string, unknown> : null;
+  const metrics = isPlainObject(readPath(value, ["public_metrics"]))
+    ? readPath(value, ["public_metrics"]) as Record<string, unknown>
+    : isPlainObject(readPath(value, ["metrics"]))
+      ? readPath(value, ["metrics"]) as Record<string, unknown>
+      : legacy;
+  const id = firstKnownString(value, ["id", "tweetId", "rest_id"]) ?? (legacy ? firstKnownString(legacy, ["id_str", "conversation_id_str"]) : null) ?? stableTextId(text);
   const handle = authorHandle?.replace(/^@/, "");
   const url =
     firstKnownString(value, ["url", "tweetUrl", "link"]) ??
     (handle && id && /^[0-9]+$/.test(id) ? `https://x.com/${handle}/status/${id}` : null);
-  const likes = firstKnownNumber(value, ["likeCount", "likes", "favorite_count", "favorites"]) ?? 0;
-  const reposts = firstKnownNumber(value, ["retweetCount", "reposts", "retweets", "quoteCount"]) ?? 0;
-  const replies = firstKnownNumber(value, ["replyCount", "replies"]) ?? 0;
-  const views = firstKnownNumber(value, ["viewCount", "views", "impressionCount"]) ?? 0;
-  const createdAt = parseSocialPostDate(value);
+  const likes = firstKnownNumber(value, ["likeCount", "likes", "favorite_count", "favorites"]) ?? (metrics ? firstKnownNumber(metrics, ["like_count", "favorite_count"]) : null) ?? 0;
+  const reposts = firstKnownNumber(value, ["retweetCount", "reposts", "retweets", "quoteCount"]) ?? (metrics ? firstKnownNumber(metrics, ["retweet_count", "quote_count"]) : null) ?? 0;
+  const replies = firstKnownNumber(value, ["replyCount", "replies"]) ?? (metrics ? firstKnownNumber(metrics, ["reply_count"]) : null) ?? 0;
+  const views = firstKnownNumber(value, ["viewCount", "views", "impressionCount"]) ?? (metrics ? firstKnownNumber(metrics, ["impression_count", "view_count"]) : null) ?? 0;
+  const createdAt = parseSocialPostDate(value) ?? (legacy ? parseSocialPostDate(legacy) : null);
 
   return {
     id: url ?? `${id}-${stableTextId(text)}`,
@@ -4223,6 +4257,14 @@ function readPath(value: unknown, path: string[]): unknown {
     if (!isPlainObject(current)) return undefined;
     return current[key];
   }, value);
+}
+
+function firstArrayAt(value: unknown, paths: string[][]) {
+  for (const path of paths) {
+    const current = readPath(value, path);
+    if (Array.isArray(current)) return current;
+  }
+  return null;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -4575,7 +4617,7 @@ function MarketsPage({
           </div>
 
           <div className="mi-statusStrip">
-            <DataPoint label="Venue price" value={formatMarketPrice(selectedMarket)} />
+            <DataPoint label="Market price" value={formatMarketPrice(selectedMarket)} />
             <DataPoint
               label="Fair probability"
               hint="The agent's evidence-weighted probability estimate, separate from the venue quote."
@@ -4664,7 +4706,7 @@ function MarketsPage({
 
           <section className="mi-reportBlock">
             <div className="mi-blockHeader">
-              <h3>Manual execution gate</h3>
+              <h3>Manual action</h3>
               <span>{selectedRun?.policy.status ?? "review"}</span>
             </div>
             <p>
@@ -4681,7 +4723,7 @@ function MarketsPage({
               <div className="mi-x402Complete">
                 <CheckCircle2 size={16} />
                 <div>
-                  <strong>x402 research complete</strong>
+                  <strong>Paid research complete</strong>
                   <span>{formatPaidResearchCompletion(selectedPaidServices)}</span>
                 </div>
               </div>
@@ -5376,7 +5418,7 @@ function ActivityPage({
                   </summary>
                   <div className="mi-ledgerExpanded">
                     <div className="mi-chatRunGrid">
-                      <DataPoint label="Venue price" value={formatRunMarketPrice(run)} />
+                      <DataPoint label="Market price" value={formatRunMarketPrice(run)} />
                       <DataPoint
                         label="Fair probability"
                         value={formatPercent(run.analysis?.agentProbability)}
@@ -5934,9 +5976,17 @@ function cleanUserFacingText(value: string) {
     .replace(/Error:\s*Payment submitted but paid request failed[^.]*\./gi, "This provider did not return usable data.")
     .replace(/Server response:\s*[^.]+/gi, "")
     .replace(/\bMARKET IDEA\s*\/\s*review:\s*/gi, "")
+    .replace(/^RESEARCH MORE\s*\/\s*review:\s*/i, "")
     .replace(/\bNo live venue price exists,?\s*so this is a market-design brief rather than a YES\/NO bet\.?\s*/gi, "")
     .replace(/\bAs this is a Draft market with no live venue price,\s*this is a market-design intelligence brief rather than a trade recommendation\.?\s*/gi, "")
     .replace(/\bThe market is currently a Draft\.?\s*/gi, "")
+    .replace(/\bmarket-design intelligence brief\b/gi, "market idea brief")
+    .replace(/\bactionable pricing\b/gi, "a live market price")
+    .replace(/\blive venue quotes?\b/gi, "a live market quote")
+    .replace(/\bvenue quote\b/gi, "market quote")
+    .replace(/\bvenue pricing\b/gi, "market pricing")
+    .replace(/\brisk gate\b/gi, "risk review")
+    .replace(/\bWallet execution remains off\b/gi, "No trade is executed automatically")
     .replace(/\b(\d{1,3})%\s+YES implied probability\b/gi, "$1¢ YES quote")
     .replace(/\b(\d{1,3})%\s+implied probability\b/gi, "$1¢ price-implied estimate")
     .replace(/\bpriced in at\s+(\d{1,3})%\b/gi, "priced near a $1¢ YES quote")
@@ -5958,8 +6008,8 @@ function buildAgentTrace(
   const blocked = state === "blocked";
   const steps: AgentTraceStep[] = [
     {
-      label: "Market context",
-      detail: "Reading the pasted market or prompt and preparing a clean research brief.",
+      label: "Question setup",
+      detail: "Reading the pasted market or prompt and preparing a clean brief.",
       status: completed ? "done" : blocked ? "blocked" : "running",
     },
     {
@@ -5988,9 +6038,9 @@ function buildAgentTrace(
 
   steps.push(
     {
-      label: "Manual safety gate",
+      label: "Manual approval",
       detail: run
-        ? `${formatActionLabel(run.modelAnalysis?.recommendation ?? run.action)} / ${run.modelAnalysis?.riskGate ?? run.riskGate}. Wallet execution remains off.`
+        ? `${formatActionLabel(run.modelAnalysis?.recommendation ?? run.action)} / ${run.modelAnalysis?.riskGate ?? run.riskGate}. No trade is executed automatically.`
         : "No payment or bet is executed unless you approve it.",
       status: completed ? "done" : blocked ? "blocked" : "queued",
     },
@@ -6042,11 +6092,13 @@ function buildPaidResearchTrace(
         detail: `${service.provider}${service.durationMs ? ` / ${formatDuration(service.durationMs)}` : ""}: ${formatPaidServiceSummary(service)}`,
         status: mapPaidServiceStatus(service.status),
       }))
-    : plannedPaidResearchServices.map((service) => ({
-        label: service.label,
-        detail: service.detail,
-        status: blocked ? "blocked" : "running",
-      }));
+    : plannedPaidResearchServices
+        .filter((service) => run?.venue === "Polymarket" || !service.polymarketOnly)
+        .map((service) => ({
+          label: service.label,
+          detail: service.detail,
+          status: blocked ? "blocked" : "running",
+        }));
 
   return [
     {
@@ -6056,13 +6108,13 @@ function buildPaidResearchTrace(
     },
     ...serviceSteps,
     {
-      label: "Research ingestion",
+      label: "Evidence merge",
       detail:
-        "Sending paid x402 evidence into the ROMA source, risk, policy, and quality review. OpenDeepSearch is not re-run in this upgrade layer.",
+        "Merging paid x402 evidence into the ROMA review. OpenDeepSearch is not re-run in this upgrade layer.",
       status: completed ? "done" : blocked ? "blocked" : "queued",
     },
     {
-      label: "Decision refresh",
+      label: "Updated call",
       detail:
         run?.modelAnalysis?.summary ??
         "Refreshing recommendation, source quality, sizing, and safety gate.",
@@ -6085,7 +6137,7 @@ function formatPaidServiceSummary(
 ) {
   if (service.status === "skipped") {
     return isExactMarketDataService(service)
-      ? "Exact market-level data needs a selected outcome with condition/token IDs. The analysis used broader market activity and source checks instead."
+      ? "This service needs an exact listed outcome. Broader market context was used instead."
       : "Skipped because the approved x402 pass did not need this provider for the current market.";
   }
 
@@ -6097,7 +6149,7 @@ function formatPaidServiceSummary(
     if (/HTML error page|<!doctype|<html/i.test(detail)) {
       return "The x402 gateway returned an error page instead of provider data. Retry shortly.";
     }
-    return "Provider did not return usable data for this market. This is tracked as a data gap, not evidence for either side.";
+    return "This provider did not return usable data. It is treated as missing information, not evidence.";
   }
 
   const source =
@@ -6112,7 +6164,7 @@ function formatPaidServiceSummary(
 
   if (/^[{[]/.test(cleaned)) {
     return service.status === "ok"
-      ? "Structured data returned successfully and was folded into the final analysis."
+      ? "Provider data was included in the final answer."
       : cleaned;
   }
 

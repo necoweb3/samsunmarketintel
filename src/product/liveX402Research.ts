@@ -881,7 +881,11 @@ async function fetchPolymarketRecords(url: string) {
 
 function compactSearchQuery(query: string) {
   const withoutUrls = query.replace(/https?:\/\/\S+/gi, " ");
-  const marketMatch = withoutUrls.match(/Prediction market research:\s*(.*?)(?:\s+Venue:|\s+Find whether|$)/i);
+  const marketMatch =
+    withoutUrls.match(/Prediction market trading analysis for:\s*(.*?)(?:\s+Venue:|\s+Find whether|\s+Multi-outcome|$)/i) ??
+    withoutUrls.match(/Prediction market design and usefulness analysis for:\s*(.*?)(?:\s+Venue:|\s+Find whether|\s+Multi-outcome|$)/i) ??
+    withoutUrls.match(/Prediction-market idea research:\s*(.*?)(?:\s+Venue:|\s+Find whether|\s+Multi-outcome|$)/i) ??
+    withoutUrls.match(/Prediction market research:\s*(.*?)(?:\s+Venue:|\s+Find whether|\s+Multi-outcome|$)/i);
   const core = marketMatch?.[1] ?? withoutUrls;
 
   return core
@@ -892,8 +896,36 @@ function compactSearchQuery(query: string) {
 
 function buildRecentXSearchQuery(query: string) {
   const since = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const core = compactSearchQuery(query).slice(0, 180);
+  const core = buildXTopicQuery(query).slice(0, 190);
   return `${core} since:${since}`;
+}
+
+function buildXTopicQuery(query: string) {
+  const compact = compactSearchQuery(query);
+  const normalized = normalizeSearchText(compact);
+
+  if (/\b(kilicdaroglu|chp|ozgur ozel|mutlak butlan|kurultay)\b/i.test(normalized)) {
+    return '("Kemal Kılıçdaroğlu" OR Kılıçdaroğlu OR CHP OR "Özgür Özel" OR "mutlak butlan" OR kurultay)';
+  }
+
+  if (/\b(turkey|turkiye|tuerkiye|turkish politics|turkish election)\b/i.test(normalized)) {
+    return `${compact} OR Türkiye OR Turkey`;
+  }
+
+  return compact;
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ı/g, "i")
+    .replace(/ğ/g, "g")
+    .replace(/ü/g, "u")
+    .replace(/ş/g, "s")
+    .replace(/ö/g, "o")
+    .replace(/ç/g, "c");
 }
 
 function buildCircleInvocation(args: string[]) {

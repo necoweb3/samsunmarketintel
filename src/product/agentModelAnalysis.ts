@@ -966,7 +966,7 @@ function adaptDraftMarketAnalysis(
   analysisLayer: "base" | "x402_upgrade",
   paidResearch: LiveX402ResearchSummary | null = null,
 ): ParsedModelAnalysis {
-  if (input.venue !== "Draft" && input.marketProbability !== null) return analysis;
+  if (input.venue !== "Draft") return analysis;
 
   const isPaid = analysisLayer === "x402_upgrade";
   const usablePaidServices = paidResearch?.services.filter((service) => service.status === "ok").length ?? 0;
@@ -976,7 +976,7 @@ function adaptDraftMarketAnalysis(
   const ideaDriver =
     "The strongest market candidates are objective, dated events with a named resolution source.";
   const noPriceNote =
-    "No listed Polymarket quote was provided; the agent cannot calculate tradable EV or recommend BET YES/BET NO.";
+    "No listed Polymarket market was provided; this should be treated as a market idea, not an executable bet.";
   const cleanedSummary = cleanDraftMarketSummary(analysis.summary);
 
   return {

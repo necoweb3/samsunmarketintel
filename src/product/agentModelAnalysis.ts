@@ -137,6 +137,28 @@ export async function requestLiveAgentModelAnalysis({
   });
 
   try {
+    const prompt = buildModelPrompt({
+      input,
+      run,
+      research,
+      marketResearch,
+      paidResearch,
+      topAlert,
+      sentientContext,
+      analysisLayer,
+      baselineAnalysis,
+    });
+    const estimatedPromptTokens = estimatePromptTokens(prompt);
+    console.info(
+      JSON.stringify({
+        component: "agentModelAnalysis",
+        layer: analysisLayer,
+        promptChars: prompt.length,
+        estimatedPromptTokens,
+        paidServices: paidResearch?.services.length ?? 0,
+      }),
+    );
+
     const response = await client.chat.completions.create({
       model: config.providerModel,
       messages: [
@@ -157,24 +179,29 @@ export async function requestLiveAgentModelAnalysis({
         },
         {
           role: "user",
-          content: buildModelPrompt({
-            input,
-            run,
-            research,
-            marketResearch,
-            paidResearch,
-            topAlert,
-            sentientContext,
-            analysisLayer,
-            baselineAnalysis,
-          }),
+          content: prompt,
         },
       ],
       max_tokens: config.maxOutputTokens,
       temperature: 0.2,
     });
     const content = response.choices[0]?.message?.content ?? "";
-    const parsed = rebalanceTimidRecommendation(modelAnalysisSchema.parse(parseJsonObject(content)));
+    console.info(
+      JSON.stringify({
+        component: "agentModelAnalysis",
+        layer: analysisLayer,
+        usage: response.usage ?? null,
+        completionChars: content.length,
+      }),
+    );
+    const parsed = adaptDraftMarketAnalysis(enhancePaidUpgradeAnalysis(
+      rebalanceTimidRecommendation(modelAnalysisSchema.parse(normalizeModelAnalysisCandidate(parseJsonObject(content)))),
+      {
+        input,
+        paidResearch: paidResearch ?? null,
+        analysisLayer,
+      },
+    ), input, analysisLayer);
 
     return {
       status: "ok",
@@ -191,12 +218,30 @@ export async function requestLiveAgentModelAnalysis({
       policyNotes: parsed.policyNotes,
       tradePlan: parsed.tradePlan ?? null,
       usage: {
-        promptTokens: response.usage?.prompt_tokens ?? null,
+        promptTokens: response.usage?.prompt_tokens ?? estimatedPromptTokens,
         completionTokens: response.usage?.completion_tokens ?? null,
         totalTokens: response.usage?.total_tokens ?? null,
       },
     };
   } catch (error) {
+    const fallback = buildPaidUpgradeFallbackAnalysis({
+      input,
+      run,
+      paidResearch: paidResearch ?? null,
+      baselineAnalysis,
+      provider: config.provider,
+      model: config.model,
+      error: error instanceof Error ? error.message : "Primary model analysis failed.",
+    });
+    if (fallback) return fallback;
+
+    console.warn(
+      JSON.stringify({
+        component: "agentModelAnalysis",
+        layer: analysisLayer,
+        error: error instanceof Error ? error.message : "Primary model analysis failed.",
+      }),
+    );
     return emptyModelAnalysis({
       status: "error",
       provider: config.provider,
@@ -246,55 +291,7 @@ function buildModelPrompt({
               instruction:
                 "This is the base layer. Use OpenDeepSearch/registered-source context first, then ROMA source/risk/policy review and optional crypto quality check.",
             },
-      strictRules: [
-        "Manual mode only.",
-        "Do not execute trades.",
-        "Do not call wallets.",
-        "Do not pay APIs.",
-        "Do not write Arc receipts.",
-        "Explicitly judge whether the market appears mispriced relative to the model probability.",
-        "If there is positive expected value, state the likely side and explain the edge.",
-        "Use Kelly-style sizing and the deterministic sizing result; if sizing is zero, explain why.",
-        "Mention hedge or early-close conditions when relevant.",
-        "Mention portfolio/correlation risk when the market overlaps with other macro, political, sports, or crypto exposures.",
-        "Weight source credibility; separate official data, credible news, social sentiment, and weak/noisy signals.",
-        "Do not confuse Polymarket cent prices with displayed percentages. If market.marketPriceLabel is present, call it a venue price/quote, e.g. 'YES price is 99¢' or 'price-implied estimate', not 'the market probability is 99%'.",
-        "Only quote a percentage chance when a source explicitly provides a percentage chance. Otherwise use cents for Polymarket prices.",
-        "Always separate the selected outcome from the selected side. A side is YES, NO, or NONE; the targetOutcome is the candidate, team, date, or exact outcome the side applies to.",
-        "For multi-outcome events, choose the best expected-value contract, not merely the most likely winner. Example: 'Buy YES on Kim' and 'Buy NO on Donald' are different trade plans.",
-        "If the most likely outcome is not the best expected-value trade, state that clearly in tradePlan.rationale or tradePlan.alternative.",
-        "For multi-outcome markets, tradePlan.targetOutcome must name the exact outcome, candidate, team, or date when a trade or lean exists.",
-        "If no trade is actionable, tradePlan.side should be NONE and tradePlan.status should be watch, avoid, or research_more; still name the most relevant targetOutcome if one is being monitored.",
-        "tradePlan.edge is fairProbability minus the venue quote for the selected outcome when both are available. If unavailable, use null.",
-        "tradePlan.fairProbability is your evidence-weighted probability for the selected targetOutcome, not the venue quote.",
-        "For sports, esports, or any competition market, explicitly look for head-to-head record, recent form, results against similar-strength opponents, roster/injury/schedule/news, and historical integrity or match-fixing concerns. If unavailable, list these as missing evidence.",
-        "For competition markets, treat suspicious one-sided flow, top-holder concentration, or smart-wallet clustering as integrity risk rather than pure alpha.",
-        "For legal or political-person markets, distinguish allegation, detention/arrest, indictment, conviction, sentence, appeal, and release. Use presumption-of-innocence language and require official court/prosecutor or highly credible reporting before recommending any market design or trade.",
-        "For company or public-figure political-proximity analysis, use observable evidence only: official roles, public contracts, filings, ownership, sanctions, court records, or repeated credible reporting. Never present unsupported proximity as fact.",
-        "If source quality is weak, prefer WAIT or RESEARCH_MORE.",
-        "If manipulation/integrity risk is high, prefer DO_NOT_BET or review.",
-        "Do not use WAIT as a default safe answer. WAIT is only appropriate when the cleaner side cannot be identified, the edge is below execution threshold, or core evidence is missing.",
-        "When one side has a meaningful evidence-weighted edge but execution risk is still review-level, recommend BET_YES or BET_NO with riskGate='review' and zero or capped sizing. Manual approval remains mandatory.",
-        "If your own thesis says the cleaner manual lean is YES or NO, the recommendation should normally be BET_YES or BET_NO, not WAIT, unless riskGate must be blocked.",
-        "If the model probability differs from the venue quote by at least 4 percentage points and source quality is not weak, identify the advantaged side instead of hiding behind WAIT.",
-        "Do not default confidence to exactly 0.55. Calibrate confidence from evidence quality: around 0.50 for unusable evidence, 0.58-0.68 for modest but directional lean, 0.70+ for strong official/market-flow agreement.",
-        "If recommendation is WAIT, still give a concise 'cleaner manual lean' in policyNotes whenever the evidence favors one side more than the other. Only say there is no cleaner side when evidence is genuinely balanced or unusable.",
-        "If market.marketProbability is not null, market pricing is known; do not list missing market price as missing evidence.",
-        "If market.venue is Draft, analyze market usefulness and launch design; do not treat missing market price as a failure.",
-        "If market.outcomeSummary is present, this is a multi-outcome event. Analyze the whole field and relative venue quotes; do not collapse the answer to a single candidate unless the user explicitly asked about that candidate.",
-        "For nominee/election field markets, compare frontrunners, tail candidates, market price distribution, and resolution wording. Identify which candidate/outcome is potentially mispriced, not only whether one low-priced candidate is plausible.",
-        "For constitutional eligibility questions, do not equate legal barriers with literal zero probability. Separate nomination/acceptance rules from presidency/ballot-access rules; include legal loophole/tail-risk and annualized capital-lockup math before recommending NO at high prices.",
-        "If recommendation is WAIT but one side is still the cleaner manual lean, include that side in policyNotes as: 'If you still trade manually, the cleaner lean is ... because ...'. If there is no cleaner side, say so explicitly.",
-        "Use marketSpecificResearch as the primary research context when it is available.",
-        "For the x402_upgrade layer, do not send paid results back into OpenDeepSearch and do not imply that OpenDeepSearch re-ran. Paid services, especially BlockRun/Tavily/Exa/Parallel/social/Perplexity, are the fresh evidence layer.",
-        "For the x402_upgrade layer, explain what changed versus the baseline analysis: new data, stronger/ weaker confidence, newly visible paid signals, and remaining gaps.",
-        "If paidX402Research exists, treat matching paid service evidence as highest priority, but explicitly ignore broad or unrelated service payloads that do not match the target market, teams, people, date, or venue.",
-        "If paidX402Research includes top-holder or holder-flow services, summarize the top-side concentration and whether large wallets support YES, NO, or only indicate manipulation risk.",
-        "Treat cachedResearch and cachedTradeFlow as secondary context; if unrelated to the target market, say confidence is lower instead of inventing relevance.",
-        "Key drivers should include concrete recent events, sources, or demand signals when marketSpecificResearch provides them.",
-        "Source credibility notes are written by the agent's source-quality reviewer. Phrase them as user-facing evidence-quality notes, not as provider criticism. Do not write things like 'OpenDeepSearch was insufficient' or 'ROMA flags weak data'; instead say 'web research is partial' or 'safety review keeps this review-first'.",
-        "Do not mention internal vendor/framework names in the final user-facing analysis except Circle x402, because x402 usage is a product feature.",
-      ],
+      strictRules: buildStrictRulesByCategory(),
       market: input,
       marketPricing: {
         venuePriceLabel: input.marketPriceLabel ?? null,
@@ -338,26 +335,7 @@ function buildModelPrompt({
             tradePlan: baselineAnalysis.tradePlan,
           }
         : null,
-      paidX402Research: paidResearch
-        ? {
-            status: paidResearch.status,
-            query: paidResearch.query,
-            maxTotalUsdc: paidResearch.maxTotalUsdc,
-            estimatedMaxSpendUsdc: paidResearch.estimatedMaxSpendUsdc,
-            actualPaidUsdc: paidResearch.actualPaidUsdc,
-            services: paidResearch.services.map((service) => ({
-              id: service.id,
-              name: service.name,
-              provider: service.provider,
-              phase: service.phase,
-              status: service.status,
-              maxAmountUsdc: service.maxAmountUsdc,
-              purpose: service.purpose,
-              summary: service.summary.slice(0, 1400),
-              error: service.error,
-            })),
-          }
-        : null,
+      paidX402Research: paidResearch ? compactPaidResearchForModel(paidResearch) : null,
       cachedResearch: relevantCachedResearch
         ? {
             query: relevantCachedResearch.query,
@@ -428,6 +406,746 @@ function buildModelPrompt({
     null,
     2,
   );
+}
+
+function compactPaidResearchForModel(paidResearch: LiveX402ResearchSummary) {
+  const okServices = paidResearch.services.filter((service) => service.status === "ok");
+  const gapServices = paidResearch.services.filter((service) => service.status !== "ok");
+  const slowestServices = [...paidResearch.services]
+    .filter((service) => typeof service.durationMs === "number")
+    .sort((a, b) => (b.durationMs ?? 0) - (a.durationMs ?? 0))
+    .slice(0, 5)
+    .map((service) => ({
+      name: service.name,
+      provider: service.provider,
+      status: service.status,
+      durationMs: service.durationMs,
+    }));
+  const holderFlow = summarizeHolderFlowForModel(paidResearch);
+  const socialHighlights = summarizeSocialPostsForModel(paidResearch);
+
+  return {
+    status: paidResearch.status,
+    query: truncate(paidResearch.query, 900),
+    maxTotalUsdc: paidResearch.maxTotalUsdc,
+    estimatedMaxSpendUsdc: paidResearch.estimatedMaxSpendUsdc,
+    actualPaidUsdc: paidResearch.actualPaidUsdc,
+    durationMs: paidResearch.durationMs,
+    coverage: {
+      ok: okServices.length,
+      gaps: gapServices.length,
+      total: paidResearch.services.length,
+      okServiceNames: okServices.slice(0, 12).map((service) => service.name),
+      gapServiceNames: gapServices.slice(0, 8).map((service) => service.name),
+    },
+    slowestServices,
+    holderFlow,
+    socialHighlights,
+    services: paidResearch.services.map((service) => ({
+      id: service.id,
+      name: service.name,
+      provider: service.provider,
+      phase: service.phase,
+      status: service.status,
+      durationMs: service.durationMs,
+      purpose: service.purpose,
+      summary:
+        service.status === "ok"
+          ? truncate(stripJsonNoise(service.summary), 520)
+          : truncate(service.error ?? service.summary, 180),
+    })),
+    instruction:
+      "This is a compact paid-evidence brief. Raw provider payloads were intentionally removed before the model call. Use holderFlow, socialHighlights, service summaries, and coverage; do not invent data from omitted raw responses.",
+  };
+}
+
+function summarizeHolderFlowForModel(paidResearch: LiveX402ResearchSummary) {
+  const service = paidResearch.services.find((item) => item.id === "blockrun-polymarket-top-holders");
+  if (!service || service.status !== "ok") {
+    return {
+      status: service?.status ?? "missing",
+      note: service ? truncate(service.summary, 240) : "Top-holder service was not present.",
+      sideTotals: [] as Array<{ side: string; count: number; amountUsd: number; shares: number }>,
+      topHolders: [] as Array<{ wallet: string; side: string; amountUsd: number; shares: number }>,
+    };
+  }
+
+  const parsed = parsePaidJson(service.rawText ?? service.summary);
+  const payload = unwrapPaidPayload(parsed);
+  const entries = collectObjects(payload)
+    .map((value) => normalizeHolderForModel(value))
+    .filter(Boolean)
+    .slice(0, 120) as Array<{ wallet: string; side: string; amountUsd: number; shares: number }>;
+  const totals = new Map<string, { side: string; count: number; amountUsd: number; shares: number }>();
+
+  for (const entry of entries) {
+    const current = totals.get(entry.side) ?? { side: entry.side, count: 0, amountUsd: 0, shares: 0 };
+    current.count += 1;
+    current.amountUsd += entry.amountUsd;
+    current.shares += entry.shares;
+    totals.set(entry.side, current);
+  }
+
+  return {
+    status: entries.length > 0 ? "ok" : "empty",
+    note:
+      entries.length > 0
+        ? "Returned top-holder rows are summarized by side. Strong directional exposure is not automatically manipulation."
+        : truncate(service.summary, 240),
+    sideTotals: [...totals.values()]
+      .map((item) => ({
+        ...item,
+        amountUsd: Number(item.amountUsd.toFixed(2)),
+        shares: Number(item.shares.toFixed(2)),
+      }))
+      .sort((a, b) => b.amountUsd - a.amountUsd),
+    topHolders: entries
+      .sort((a, b) => b.amountUsd - a.amountUsd)
+      .slice(0, 8)
+      .map((entry) => ({
+        wallet: shortHash(entry.wallet),
+        side: entry.side,
+        amountUsd: Number(entry.amountUsd.toFixed(2)),
+        shares: Number(entry.shares.toFixed(2)),
+      })),
+  };
+}
+
+function summarizeSocialPostsForModel(paidResearch: LiveX402ResearchSummary) {
+  const posts = paidResearch.services
+    .filter((service) => service.id.includes("twitter") && service.status === "ok")
+    .flatMap((service) => extractSocialPostsForModel(service.rawText ?? service.summary))
+    .filter((post) => post.engagement > 0)
+    .sort((a, b) => b.engagement - a.engagement)
+    .slice(0, 6);
+
+  return posts.map((post) => ({
+    author: post.author,
+    handle: post.handle,
+    age: post.age,
+    engagement: post.engagement,
+    text: truncate(post.text, 420),
+  }));
+}
+
+function extractSocialPostsForModel(value: string | null | undefined) {
+  const parsed = parsePaidJson(value);
+  const payload = unwrapPaidPayload(parsed);
+  const tweets = collectObjects(payload).filter((item) => typeof firstString(item, ["text", "full_text", "content"]) === "string");
+  const now = Date.now();
+
+  return tweets.map((tweet) => {
+    const author = readObject(tweet.author);
+    const text = firstString(tweet, ["text", "full_text", "content"]) ?? "";
+    const handle = author
+      ? firstString(author, ["userName", "screenName", "screen_name", "handle", "username"])
+      : null;
+    const authorName = author ? firstString(author, ["name", "displayName", "userName", "screenName"]) : null;
+    const likes = firstNumber(tweet, ["likeCount", "likes", "favorite_count", "favorites"]) ?? 0;
+    const reposts = firstNumber(tweet, ["retweetCount", "reposts", "retweets", "quoteCount"]) ?? 0;
+    const replies = firstNumber(tweet, ["replyCount", "replies"]) ?? 0;
+    const createdAt = parseMaybeDate(firstString(tweet, ["createdAt", "created_at", "postedAt", "publishedAt"]));
+    const ageMs = createdAt ? now - createdAt.getTime() : null;
+    const age = ageMs === null ? null : Math.max(0, Math.floor(ageMs / (24 * 60 * 60 * 1000)));
+
+    return {
+      author: authorName ?? (handle ? `@${handle}` : "Unknown"),
+      handle: handle ? `@${handle.replace(/^@/, "")}` : null,
+      age: age === null ? null : age === 0 ? "today" : `${age}d`,
+      engagement: Math.round(likes + reposts * 2 + replies),
+      text,
+    };
+  });
+}
+
+function normalizeHolderForModel(value: Record<string, unknown>) {
+  const wallet = firstString(value, ["wallet", "address", "user", "holder", "proxyWallet"]);
+  if (!wallet) return null;
+  const side = normalizeSide(firstString(value, ["side", "outcome", "outcome_label"]) ?? "Unknown");
+  const shares = firstNumber(value, ["position_shares", "shares", "shares_normalized", "position"]) ?? 0;
+  const amountUsd =
+    firstNumber(value, ["position_value_usd", "amount_usd", "amountUsd", "value", "value_usd", "notional"]) ??
+    shares * (firstNumber(value, ["price", "avg_price", "average_price"]) ?? 0);
+
+  if (shares <= 0 && amountUsd <= 0) return null;
+  return { wallet, side, shares, amountUsd };
+}
+
+function buildStrictRulesByCategory() {
+  return {
+    safety: [
+      "Manual mode only.",
+      "Do not execute trades, call wallets, pay APIs, or write Arc receipts.",
+      "Manual approval is mandatory even when recommendation is BET_YES or BET_NO.",
+    ],
+    pricingAndEv: [
+      "Use cents/quote language for Polymarket prices unless a source explicitly gives a percentage.",
+      "For YES, edge = fairProbability - venueQuote. For NO, edge = venueQuote - fairProbability. Use a numeric edge when both values are available.",
+      "Use Kelly-style sizing and explain why stake is zero when it is zero.",
+    ],
+    decisionCalibration: [
+      "WAIT is only appropriate when no cleaner side is identifiable, edge is below threshold, or core evidence is missing.",
+      "When a review-level trade has meaningful edge, use BET_YES or BET_NO with riskGate='review' instead of hiding behind WAIT.",
+      "If venue is Draft or the market price is missing, do not return BET_YES or BET_NO. Return RESEARCH_MORE or WAIT and frame the answer as market-design intelligence, not a trade recommendation.",
+      "Do not default confidence to exactly 0.55.",
+    ],
+    x402Upgrade: [
+      "Do not send paid results back into OpenDeepSearch or imply OpenDeepSearch re-ran.",
+      "Use paid services as the fresh evidence layer and explain what changed versus baseline.",
+      "If paid holder-flow shows one side materially larger, decide whether it is directional conviction or manipulation; do not call normal directional exposure manipulation by default.",
+      "Use socialHighlights when relevant and remove missing-evidence items that paid research covered.",
+    ],
+  };
+}
+
+function estimatePromptTokens(value: string) {
+  return Math.ceil(value.length / 4);
+}
+
+function truncate(value: string | null | undefined, maxLength: number) {
+  if (!value) return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trim()}...`;
+}
+
+function stripJsonNoise(value: string) {
+  return value
+    .replace(/"profilePicture":"[^"]+"/g, '"profilePicture":"[image]"')
+    .replace(/"coverPicture":"[^"]+"/g, '"coverPicture":"[image]"')
+    .replace(/"profile_image_url_https":"[^"]+"/g, '"profile_image_url_https":"[image]"')
+    .replace(/"clobTokenIds":"\[[^"]+\]"/g, '"clobTokenIds":"[token ids]"');
+}
+
+function parsePaidJson(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function unwrapPaidPayload(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return readNested(value, ["data", "response"]) ?? readNested(value, ["response"]) ?? readNested(value, ["data"]) ?? value;
+}
+
+function readNested(value: Record<string, unknown>, path: string[]) {
+  return path.reduce<unknown>((current, key) => (isRecord(current) ? current[key] : undefined), value);
+}
+
+function collectObjects(value: unknown, limit = 700): Array<Record<string, unknown>> {
+  const objects: Array<Record<string, unknown>> = [];
+  const seen = new Set<unknown>();
+
+  function visit(current: unknown) {
+    if (objects.length >= limit || current === null || typeof current !== "object" || seen.has(current)) return;
+    seen.add(current);
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    if (isRecord(current)) {
+      objects.push(current);
+      Object.values(current).forEach(visit);
+    }
+  }
+
+  visit(value);
+  return objects;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readObject(value: unknown) {
+  return isRecord(value) ? value : null;
+}
+
+function firstString(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const current = value[key];
+    if (typeof current === "string" && current.trim()) return current;
+    if (typeof current === "number" || typeof current === "boolean") return String(current);
+  }
+  return null;
+}
+
+function firstNumber(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const current = value[key];
+    if (typeof current === "number" && Number.isFinite(current)) return current;
+    if (typeof current === "string") {
+      const parsed = Number(current.replace(/[^0-9.-]/g, ""));
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function normalizeSide(value: string) {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("yes")) return "YES";
+  if (normalized.includes("no")) return "NO";
+  return value || "Unknown";
+}
+
+function normalizeModelAnalysisCandidate(value: unknown) {
+  if (!isRecord(value)) return value;
+  const candidate: Record<string, unknown> = { ...value };
+
+  candidate.recommendation = normalizeRecommendationValue(candidate.recommendation);
+  candidate.riskGate = normalizeRiskGateValue(candidate.riskGate);
+  candidate.confidence = normalizeProbabilityValue(candidate.confidence, "confidence");
+  candidate.thesis = truncate(firstString(candidate, ["thesis"]) ?? "Paid and base evidence were reviewed for this market.", 1800);
+  candidate.summary = truncate(firstString(candidate, ["summary"]) ?? "Evidence was reviewed; manual approval remains required.", 900);
+  candidate.keyDrivers = normalizeStringArray(candidate.keyDrivers, 6, 420, [
+    "Evidence was reviewed across market data, news, and source-quality checks.",
+  ]);
+  candidate.missingEvidence = normalizeStringArray(candidate.missingEvidence, 6, 420);
+  candidate.sourceCredibilityNotes = normalizeStringArray(candidate.sourceCredibilityNotes, 6, 420);
+  candidate.policyNotes = normalizeStringArray(candidate.policyNotes, 6, 420, [
+    "Manual approval is required before staging or recording any intent.",
+  ]);
+
+  const tradePlan = readObject(candidate.tradePlan);
+  if (tradePlan) {
+    const normalizedTradePlan: Record<string, unknown> = { ...tradePlan };
+    normalizedTradePlan.status = normalizeTradePlanStatus(normalizedTradePlan.status);
+    normalizedTradePlan.side = normalizeTradePlanSide(normalizedTradePlan.side);
+    normalizedTradePlan.targetOutcome =
+      normalizedTradePlan.targetOutcome === null
+        ? null
+        : truncate(String(normalizedTradePlan.targetOutcome ?? "Selected outcome"), 160);
+    normalizedTradePlan.marketQuote =
+      normalizedTradePlan.marketQuote === null
+        ? null
+        : truncate(String(normalizedTradePlan.marketQuote ?? "Venue quote unavailable"), 80);
+    normalizedTradePlan.fairProbability = normalizeProbabilityValue(normalizedTradePlan.fairProbability, "probability");
+    normalizedTradePlan.edge = normalizeProbabilityValue(normalizedTradePlan.edge, "edge");
+    normalizedTradePlan.confidence = normalizeProbabilityValue(normalizedTradePlan.confidence, "confidence");
+    normalizedTradePlan.rationale = truncate(
+      firstString(normalizedTradePlan, ["rationale"]) ?? "The agent keeps execution manual until the user approves an intent.",
+      700,
+    );
+    normalizedTradePlan.alternative =
+      normalizedTradePlan.alternative === null
+        ? null
+        : truncate(String(normalizedTradePlan.alternative ?? ""), 360) || null;
+    normalizedTradePlan.hedgeOrExit =
+      normalizedTradePlan.hedgeOrExit === null
+        ? null
+        : truncate(String(normalizedTradePlan.hedgeOrExit ?? ""), 360) || null;
+    candidate.tradePlan = normalizedTradePlan;
+  }
+
+  return candidate;
+}
+
+function normalizeRecommendationValue(value: unknown) {
+  const normalized = String(value ?? "WAIT").toUpperCase().replace(/[\s-]+/g, "_");
+  if (normalized.includes("BET_YES") || normalized === "YES" || normalized.includes("LEAN_YES")) return "BET_YES";
+  if (normalized.includes("BET_NO") || normalized === "NO" || normalized.includes("LEAN_NO")) return "BET_NO";
+  if (normalized.includes("DO_NOT") || normalized.includes("AVOID")) return "DO_NOT_BET";
+  if (normalized.includes("RESEARCH")) return "RESEARCH_MORE";
+  return "WAIT";
+}
+
+function normalizeRiskGateValue(value: unknown) {
+  const normalized = String(value ?? "review").toLowerCase();
+  if (normalized.includes("open")) return "open";
+  if (normalized.includes("block")) return "blocked";
+  return "review";
+}
+
+function normalizeTradePlanStatus(value: unknown) {
+  const normalized = String(value ?? "watch").toLowerCase();
+  if (normalized.includes("trade") || normalized.includes("bet")) return "trade";
+  if (normalized.includes("avoid") || normalized.includes("do_not")) return "avoid";
+  if (normalized.includes("research")) return "research_more";
+  return "watch";
+}
+
+function normalizeTradePlanSide(value: unknown) {
+  const normalized = String(value ?? "NONE").toUpperCase();
+  if (normalized.includes("YES")) return "YES";
+  if (normalized.includes("NO")) return "NO";
+  return "NONE";
+}
+
+function normalizeProbabilityValue(value: unknown, kind: "confidence" | "probability" | "edge") {
+  if (value === null || value === undefined || value === "") return kind === "edge" ? null : value;
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.replace(/[^0-9.-]/g, ""))
+        : Number.NaN;
+  if (!Number.isFinite(numeric)) return kind === "edge" ? null : value;
+  if (kind === "edge") {
+    if (Math.abs(numeric) > 1 && Math.abs(numeric) <= 100) return Number((numeric / 100).toFixed(4));
+    return Number(numeric.toFixed(4));
+  }
+  if (numeric > 1 && numeric <= 100) return Number((numeric / 100).toFixed(4));
+  return Math.min(1, Math.max(0, Number(numeric.toFixed(4))));
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxLength: number, fallback: string[] = []) {
+  const items = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\n|;|(?<=\.)\s+(?=[A-Z])/)
+      : fallback;
+
+  return items
+    .map((item) => truncate(String(item ?? ""), maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function parseMaybeDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function shortHash(value: string) {
+  if (value.length <= 14) return value;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function buildPaidUpgradeFallbackAnalysis({
+  input,
+  run,
+  paidResearch,
+  baselineAnalysis,
+  provider,
+  model,
+  error,
+}: {
+  input: AgentRunInput;
+  run: AgentRunRecord;
+  paidResearch: LiveX402ResearchSummary | null;
+  baselineAnalysis: LiveAgentModelAnalysis | null;
+  provider: string;
+  model: string;
+  error: string;
+}): LiveAgentModelAnalysis | null {
+  if (!paidResearch) return null;
+  const okServices = paidResearch.services.filter((service) => service.status === "ok");
+  if (okServices.length === 0) return null;
+
+  const compact = compactPaidResearchForModel(paidResearch);
+  const base = baselineAnalysis?.status === "ok" ? baselineAnalysis : null;
+  const holderLeader = compact.holderFlow.sideTotals[0] ?? null;
+  const hasDeepResearch = okServices.some((service) => /deep-research|deep research/i.test(`${service.id} ${service.name}`));
+  const hasPaidSearch = okServices.some((service) =>
+    /tavily|exa|parallel|perplexity|search|news/i.test(`${service.id} ${service.name}`),
+  );
+  const socialCount = compact.socialHighlights.length;
+  const baseRecommendation = base?.recommendation ?? run.action;
+  const baseRiskGate = base?.riskGate ?? run.riskGate;
+  const baseTradePlan = base?.tradePlan ?? buildFallbackTradePlan(input, run);
+  const evidenceDrivers = buildPaidEvidenceDrivers(compact, okServices.length, paidResearch.services.length);
+  const confidenceFloor = Math.max(
+    base?.confidence ?? run.confidence ?? input.confidence,
+    hasDeepResearch ? 0.68 : 0,
+    hasPaidSearch ? 0.64 : 0,
+    socialCount > 0 ? 0.63 : 0,
+    holderLeader ? 0.63 : 0,
+  );
+  const sourceNotes = [
+    `Circle x402 returned ${okServices.length}/${paidResearch.services.length} usable paid services${hasDeepResearch ? ", including Deep Research" : ""}.`,
+    holderLeader
+      ? `Returned holder exposure is led by ${holderLeader.side}: ${formatModelUsd(holderLeader.amountUsd)} across ${holderLeader.count} holders. Treat it as directional context, not manipulation by itself.`
+      : null,
+    socialCount > 0
+      ? `Recent X/social search returned ${socialCount} high-engagement post${socialCount === 1 ? "" : "s"} for sentiment context.`
+      : null,
+    ...(base?.sourceCredibilityNotes ?? []),
+  ].filter(Boolean) as string[];
+  const thesisParts = [
+    base?.thesis ?? run.summary,
+    holderLeader
+      ? `The paid holder snapshot adds a live flow signal: ${holderLeader.side} has the largest returned exposure (${formatModelUsd(holderLeader.amountUsd)}).`
+      : null,
+    socialCount > 0
+      ? `Paid X/social search adds fresh public-attention context, with the top returned posts inside the freshness window.`
+      : null,
+    hasDeepResearch
+      ? "Perplexity Deep Research was available as a paid cited research layer and was included in the upgrade evidence."
+      : null,
+  ].filter(Boolean);
+
+  console.warn(
+    JSON.stringify({
+      component: "agentModelAnalysis",
+      layer: "x402_upgrade",
+      fallback: "paid_evidence_summary",
+      error,
+      okPaidServices: okServices.length,
+    }),
+  );
+
+  const parsed: ParsedModelAnalysis = {
+    recommendation: baseRecommendation,
+    riskGate: baseRiskGate,
+    confidence: Math.min(0.9, confidenceFloor),
+    thesis: truncate(thesisParts.join(" "), 1800),
+    summary: truncate(
+      `${formatRecommendationSummary(baseRecommendation)} Paid x402 evidence returned ${okServices.length}/${paidResearch.services.length} usable services; the upgrade memo keeps execution manual and folds holder/social/search signals into the review.`,
+      900,
+    ),
+    keyDrivers: [...evidenceDrivers, ...(base?.keyDrivers ?? [])].slice(0, 6),
+    missingEvidence: removeCoveredMissingEvidence(base?.missingEvidence ?? [], {
+      hasPaidSearch,
+      hasSocial: socialCount > 0,
+      hasHolderFlow: Boolean(holderLeader),
+    }).slice(0, 6),
+    sourceCredibilityNotes: sourceNotes.slice(0, 6),
+    policyNotes: [
+      "Manual approval remains required; x402 evidence can change confidence and side selection, but it cannot execute a wallet trade.",
+      ...(base?.policyNotes ?? []),
+    ].slice(0, 6),
+    tradePlan: baseTradePlan
+      ? {
+          ...baseTradePlan,
+          confidence: Math.max(baseTradePlan.confidence ?? 0, Math.min(0.9, confidenceFloor)),
+          edge: baseTradePlan.edge ?? inferTradePlanEdge(input, baseTradePlan),
+        }
+      : null,
+  };
+  const enhanced = adaptDraftMarketAnalysis(enhancePaidUpgradeAnalysis(rebalanceTimidRecommendation(parsed), {
+    input,
+    paidResearch,
+    analysisLayer: "x402_upgrade",
+  }), input, "x402_upgrade");
+
+  return {
+    status: "ok",
+    provider,
+    model,
+    recommendation: enhanced.recommendation,
+    riskGate: enhanced.riskGate,
+    confidence: enhanced.confidence,
+    thesis: enhanced.thesis,
+    summary: enhanced.summary,
+    keyDrivers: enhanced.keyDrivers,
+    missingEvidence: enhanced.missingEvidence,
+    sourceCredibilityNotes: enhanced.sourceCredibilityNotes,
+    policyNotes: enhanced.policyNotes,
+    tradePlan: enhanced.tradePlan ?? null,
+    usage: null,
+    error,
+  };
+}
+
+function buildFallbackTradePlan(input: AgentRunInput, run: AgentRunRecord): LiveAgentTradePlan | null {
+  const quote = input.marketProbability;
+  if (quote === null) return null;
+  const side = run.sizing.side === "YES" || run.sizing.side === "NO" ? run.sizing.side : "NONE";
+  return {
+    status: side === "NONE" ? "watch" : "trade",
+    targetOutcome: null,
+    side,
+    marketQuote: input.marketPriceLabel ?? `${Math.round(quote * 100)}c`,
+    fairProbability: input.agentProbability,
+    edge: side === "YES" ? input.agentProbability - quote : side === "NO" ? quote - input.agentProbability : null,
+    confidence: input.confidence,
+    rationale: "Fallback trade plan derived from the deterministic run while preserving manual execution.",
+    alternative: null,
+    hedgeOrExit: null,
+  };
+}
+
+function adaptDraftMarketAnalysis(
+  analysis: ParsedModelAnalysis,
+  input: AgentRunInput,
+  analysisLayer: "base" | "x402_upgrade",
+): ParsedModelAnalysis {
+  if (input.venue !== "Draft" && input.marketProbability !== null) return analysis;
+
+  const isPaid = analysisLayer === "x402_upgrade";
+  const confidence = Math.max(analysis.confidence, isPaid ? 0.72 : 0.62);
+  const summaryPrefix = isPaid
+    ? "MARKET IDEA / review: Paid research surfaced current evidence for a possible market, but no live venue price exists."
+    : "MARKET IDEA / review: No live venue price exists, so this is a market-design brief rather than a YES/NO bet.";
+  const ideaDriver =
+    "Convert the event into an objective market question with dated resolution criteria before any trade or proof flow.";
+  const noPriceNote =
+    "No listed Polymarket quote was provided; the agent cannot calculate tradable EV or recommend BET YES/BET NO.";
+
+  return {
+    ...analysis,
+    recommendation: "RESEARCH_MORE",
+    riskGate: "review",
+    confidence,
+    summary: truncate(
+      `${summaryPrefix} ${analysis.summary.replace(/^(BET_YES|BET_NO|YES|NO|WAIT|RESEARCH_MORE)\s*\/\s*review:\s*/i, "").trim()}`,
+      900,
+    ),
+    keyDrivers: [ideaDriver, ...analysis.keyDrivers.filter((item) => item !== ideaDriver)].slice(0, 6),
+    missingEvidence: [
+      "A concrete market contract, outcome set, and resolution source.",
+      ...analysis.missingEvidence.filter((item) => !/market price|venue price|quote/i.test(item)),
+    ].slice(0, 6),
+    sourceCredibilityNotes: analysis.sourceCredibilityNotes.slice(0, 6),
+    policyNotes: [
+      noPriceNote,
+      "Use the brief to draft market ideas or stage a watch intent; do not treat this as an executable trade.",
+      ...analysis.policyNotes.filter((item) => !/bet yes|bet no/i.test(item)),
+    ].slice(0, 6),
+    tradePlan: {
+      status: "research_more",
+      targetOutcome: null,
+      side: "NONE",
+      marketQuote: input.marketPriceLabel ?? null,
+      fairProbability: null,
+      edge: null,
+      confidence,
+      rationale:
+        "This is an event-intelligence or market-idea request. Without a listed Polymarket quote, the agent can assess demand, evidence, resolution design, and risks, but not size a directional bet.",
+      alternative:
+        "Draft a market such as a dated legal/political outcome, leadership status, resignation/removal question, or official-announcement question with a named resolution source.",
+      hedgeOrExit: analysis.tradePlan?.hedgeOrExit ?? null,
+    },
+  };
+}
+
+function buildPaidEvidenceDrivers(
+  compact: ReturnType<typeof compactPaidResearchForModel>,
+  okServices: number,
+  totalServices: number,
+) {
+  const drivers = [`Circle x402 paid layer returned ${okServices}/${totalServices} usable services.`];
+  const holderLeader = compact.holderFlow.sideTotals[0] ?? null;
+  if (holderLeader) {
+    drivers.push(`Top-holder snapshot is led by ${holderLeader.side} exposure (${formatModelUsd(holderLeader.amountUsd)} returned).`);
+  }
+  if (compact.socialHighlights.length > 0) {
+    drivers.push(`Recent X/social search returned ${compact.socialHighlights.length} high-engagement posts for sentiment context.`);
+  }
+  const deepResearch = compact.services.find((service) => /deep research/i.test(service.name) && service.status === "ok");
+  if (deepResearch) drivers.push("Perplexity Deep Research returned a usable paid cited-research layer.");
+  return drivers.slice(0, 4);
+}
+
+function removeCoveredMissingEvidence(
+  items: string[],
+  coverage: { hasPaidSearch: boolean; hasSocial: boolean; hasHolderFlow: boolean },
+) {
+  return items.filter((item) => {
+    const normalized = item.toLowerCase();
+    if (coverage.hasPaidSearch && /(fresh|live|recent|current).*(news|research|intelligence|data)/i.test(normalized)) return false;
+    if (coverage.hasSocial && /(x|twitter|social|sentiment|hype)/i.test(normalized)) return false;
+    if (coverage.hasHolderFlow && /(holder|wallet|flow|top-holder|smart money)/i.test(normalized)) return false;
+    return true;
+  });
+}
+
+function formatRecommendationSummary(recommendation: LiveAgentModelAnalysis["recommendation"]) {
+  if (recommendation === "BET_YES") return "BET YES / review:";
+  if (recommendation === "BET_NO") return "BET NO / review:";
+  if (recommendation === "DO_NOT_BET") return "DO NOT BET / blocked:";
+  if (recommendation === "RESEARCH_MORE") return "RESEARCH MORE / review:";
+  return "WAIT / review:";
+}
+
+function enhancePaidUpgradeAnalysis(
+  analysis: ParsedModelAnalysis,
+  {
+    input,
+    paidResearch,
+    analysisLayer,
+  }: {
+    input: AgentRunInput;
+    paidResearch: LiveX402ResearchSummary | null;
+    analysisLayer: "base" | "x402_upgrade";
+  },
+): ParsedModelAnalysis {
+  if (analysisLayer !== "x402_upgrade" || !paidResearch) return analysis;
+
+  const okServices = paidResearch.services.filter((service) => service.status === "ok");
+  if (okServices.length === 0) return analysis;
+
+  const compact = compactPaidResearchForModel(paidResearch);
+  const hasPaidSearch = okServices.some((service) =>
+    /tavily|exa|parallel|perplexity|search|news/i.test(`${service.id} ${service.name}`),
+  );
+  const hasDeepResearch = okServices.some((service) => /deep-research|deep research/i.test(`${service.id} ${service.name}`));
+  const hasSocial = compact.socialHighlights.length > 0;
+  const holderLeader = compact.holderFlow.sideTotals[0] ?? null;
+  const recommendationSide =
+    analysis.recommendation === "BET_YES"
+      ? "YES"
+      : analysis.recommendation === "BET_NO"
+        ? "NO"
+        : analysis.tradePlan?.side === "YES" || analysis.tradePlan?.side === "NO"
+          ? analysis.tradePlan.side
+          : null;
+  const holderSupportsRecommendation =
+    holderLeader && recommendationSide && holderLeader.side === recommendationSide && holderLeader.amountUsd > 0;
+  const cleanerMissingEvidence = analysis.missingEvidence.filter((item) => {
+    const normalized = item.toLowerCase();
+    if (hasPaidSearch && /(fresh|live|recent|current).*(news|research|intelligence|sentiment|data)/i.test(normalized)) {
+      return false;
+    }
+    if (hasSocial && /(x|twitter|social|sentiment|hype)/i.test(normalized)) return false;
+    if (holderSupportsRecommendation && /(holder|wallet|flow|top-holder|smart money)/i.test(normalized)) return false;
+    return true;
+  });
+  const inferredEdge = inferTradePlanEdge(input, analysis.tradePlan ?? null);
+  const upgradedTradePlan =
+    analysis.tradePlan && inferredEdge !== null && analysis.tradePlan.edge === null
+      ? { ...analysis.tradePlan, edge: inferredEdge }
+      : analysis.tradePlan ?? null;
+  const minimumConfidence =
+    analysis.recommendation === "BET_YES" || analysis.recommendation === "BET_NO"
+      ? Math.max(
+          analysis.confidence,
+          hasDeepResearch ? 0.7 : 0,
+          holderSupportsRecommendation ? 0.68 : 0,
+          hasPaidSearch && hasSocial ? 0.66 : 0,
+        )
+      : analysis.confidence;
+  const paidNotes = [
+    holderSupportsRecommendation
+      ? `Paid holder-flow leans ${holderLeader.side}: ${formatModelUsd(holderLeader.amountUsd)} across ${holderLeader.count} returned holders. This is treated as directional context, not manipulation by itself.`
+      : null,
+    hasSocial
+      ? `Recent paid X/social evidence returned ${compact.socialHighlights.length} high-engagement post${compact.socialHighlights.length === 1 ? "" : "s"} and was folded into the thesis.`
+      : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    ...analysis,
+    confidence: Math.min(0.92, minimumConfidence),
+    missingEvidence: cleanerMissingEvidence.slice(0, 6),
+    sourceCredibilityNotes: [...paidNotes, ...analysis.sourceCredibilityNotes].slice(0, 6),
+    tradePlan: upgradedTradePlan,
+  };
+}
+
+function inferTradePlanEdge(
+  input: AgentRunInput,
+  tradePlan: ParsedModelAnalysis["tradePlan"],
+) {
+  const venueQuote = input.marketProbability;
+  const fair = tradePlan?.fairProbability;
+  if (!tradePlan || venueQuote === null || fair === null || fair === undefined) return null;
+  if (tradePlan.side === "YES") return Number((fair - venueQuote).toFixed(4));
+  if (tradePlan.side === "NO") {
+    const yesFair = fair > 0.5 ? 1 - fair : fair;
+    return Number((venueQuote - yesFair).toFixed(4));
+  }
+  return null;
+}
+
+function formatModelUsd(value: number) {
+  if (!Number.isFinite(value)) return "$0";
+  return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
 function rebalanceTimidRecommendation(analysis: ParsedModelAnalysis): ParsedModelAnalysis {

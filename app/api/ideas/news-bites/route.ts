@@ -70,6 +70,28 @@ type SourceMatch = {
 
 const BASE_QUERY_SPECS: QuerySpec[] = [
   {
+    q: "Turkiye bugun gundem siyaset parti lideri mahkeme dava kurultay istifa adaylik",
+    tbs: "qdr:d",
+    horizon: "Daily",
+    endpoint: "search",
+    feedType: "web",
+  },
+  {
+    q: "Kemal Kilicdaroglu CHP kurultay dava mahkeme mutlak butlan gundem son dakika",
+    tbs: "qdr:d",
+    horizon: "Daily",
+    endpoint: "search",
+    feedType: "web",
+  },
+  {
+    q: "site:x.com (Kilicdaroglu OR KemalKilicdaroglu OR CHP OR kurultay OR mutlak butlan) (gundem OR son dakika OR dava OR mahkeme)",
+    tbs: "qdr:d",
+    horizon: "Daily",
+    endpoint: "search",
+    feedType: "x",
+    forceTurkeyContext: true,
+  },
+  {
     q: "site:aa.com.tr OR site:dw.com OR site:bbc.com/turkce Turkiye bugun tutuklama sorusturma mahkeme kamuoyu",
     tbs: "qdr:d",
     horizon: "Daily",
@@ -129,7 +151,7 @@ const ideaReviewSchema = z.object({
     reasons: z.array(z.string().min(2).max(220)).max(4).optional(),
     suggestedQuestion: z.string().min(10).max(260).optional(),
     resolutionHint: z.string().min(10).max(260).optional(),
-  })).max(24),
+  })).max(32),
 });
 
 const FEATURED_MARKET_CASES: NewsBite[] = [
@@ -276,7 +298,7 @@ export async function GET() {
     .filter((item): item is NewsBite => item !== null)
     .sort((a, b) => b.score - a.score);
   const reviewedItems = await reviewMarketIdeasWithModel(
-    dedupeClassifiedItems([...FEATURED_MARKET_CASES, ...classifiedItems]).slice(0, 30),
+    dedupeClassifiedItems([...FEATURED_MARKET_CASES, ...classifiedItems]).slice(0, 45),
   );
   const items = await enrichNewsThumbnails(
     reviewedItems.items,
@@ -334,7 +356,7 @@ async function reviewMarketIdeasWithModel(items: NewsBite[]) {
             content: JSON.stringify({
               task:
                 "Review these items. Keep or revise marketPotential, score, category, reasons, suggestedQuestion, and resolutionHint. High means strong market-creation potential; Watch means interesting but needs confirmation; Medium is context only.",
-              items: items.slice(0, 24).map((item) => ({
+              items: items.slice(0, 32).map((item) => ({
                 id: item.id,
                 title: item.title,
                 summary: item.summary,
@@ -457,13 +479,13 @@ function buildXSourceQueries(registry: SourceRegistryRecord[]): QuerySpec[] {
     buildXQuery(
       record,
       handle,
-      `site:x.com/${handle} (Turkiye OR Turkey OR Istanbul OR Ankara OR gozaltina OR tutuklandi OR mahkeme OR sorusturma OR asayis OR ekonomi OR secim)`,
+      `site:x.com/${handle} (Turkiye OR Turkey OR Istanbul OR Ankara OR gozaltina OR tutuklandi OR mahkeme OR sorusturma OR asayis OR ekonomi OR secim OR CHP OR Kilicdaroglu OR kurultay OR gundem OR istifa)`,
       "Daily",
     ),
     buildXQuery(
       record,
       handle,
-      `site:x.com/${handle} (Turkiye OR Turkey OR Istanbul OR Ankara OR gozaltina OR tutuklandi OR mahkeme OR sorusturma OR asayis OR ekonomi OR secim)`,
+      `site:x.com/${handle} (Turkiye OR Turkey OR Istanbul OR Ankara OR gozaltina OR tutuklandi OR mahkeme OR sorusturma OR asayis OR ekonomi OR secim OR CHP OR Kilicdaroglu OR kurultay OR gundem OR istifa)`,
       "Weekly",
     ),
   ]);
@@ -501,7 +523,7 @@ async function fetchSerperNews(query: QuerySpec, apiKey: string): Promise<Fetche
         gl: "tr",
         hl: "tr",
         tbs: query.tbs,
-        num: query.feedType === "x" ? 6 : 8,
+        num: query.feedType === "x" ? 10 : 10,
       }),
       cache: "no-store",
     });
@@ -695,7 +717,18 @@ function normalizeImageUrl(value: string | null, pageUrl: string) {
   try {
     const url = new URL(value, pageUrl);
     const lowered = url.href.toLowerCase();
-    if (lowered.includes("placeholder") || lowered.includes("default-image")) return null;
+    if (
+      lowered.includes("placeholder") ||
+      lowered.includes("default-image") ||
+      lowered.includes("favicon") ||
+      lowered.includes("profile_images") ||
+      lowered.includes("google.com/s2/favicons")
+    ) {
+      return null;
+    }
+    url.search = url.search
+      .replace(/([?&])name=(?:small|thumb|360x360)(&|$)/i, "$1name=large$2")
+      .replace(/([?&])format=jpg&name=small/i, "$1format=jpg&name=large");
     return url.href;
   } catch {
     return null;
@@ -714,6 +747,7 @@ function classifyCategory(text: string) {
       "goz alti",
       "ceza",
       "dava",
+      "mutlak butlan",
       "arrest",
       "detained",
       "indictment",
@@ -772,6 +806,12 @@ function classifyCategory(text: string) {
       "secim",
       "anket",
       "meclis",
+      "chp",
+      "kilicdaroglu",
+      "kurultay",
+      "parti lideri",
+      "adaylik",
+      "istifa",
       "yasa",
       "bakan",
       "belediye",
@@ -812,12 +852,23 @@ function detectSignals(
     competitionData:
       category === "Competition Integrity" &&
       hasAny(text, ["sike", "bahis", "mac", "futbol", "basketbol", "injury", "lineup", "match fixing"]),
+    politicalPerson:
+      hasAny(text, [
+        "kilicdaroglu",
+        "chp",
+        "parti lideri",
+        "kurultay",
+        "mutlak butlan",
+        "adaylik",
+        "istifa",
+        "muhalefet",
+      ]),
     deadline:
       hasAny(text, ["bugun", "yarin", "bu hafta", "before", "by ", "deadline", "announced", "aciklan"]),
     allegation:
       hasAny(text, ["iddia", "alleged", "claim", "reportedly", "soylendi", "rumor"]),
     broadDemand:
-      hasAny(text, ["kamuoyu", "piyasa", "beklenti", "anket", "secim", "dolar", "derbi", "final"]),
+      hasAny(text, ["kamuoyu", "piyasa", "beklenti", "anket", "secim", "dolar", "derbi", "final", "gundem"]),
   };
 }
 
@@ -850,6 +901,10 @@ function buildReasons(
 
   if (signals.competitionData) {
     reasons.push("Competition signal detected; analysis should check head-to-head, recent form, lineup/injury news, and abnormal betting flow.");
+  }
+
+  if (signals.politicalPerson) {
+    reasons.push("Public-figure or party-leadership signal detected; this can create local demand that global prediction markets often miss.");
   }
 
   if (signals.deadline) {
@@ -889,6 +944,7 @@ function scoreNews(
   if (signals.legalMilestone) score += 16;
   if (signals.macroRelease) score += 15;
   if (signals.competitionData) score += 11;
+  if (signals.politicalPerson) score += 12;
   if (signals.deadline) score += 8;
   if (signals.broadDemand) score += 5;
   if (category === "Local Event Watch") score -= 8;
@@ -1021,6 +1077,11 @@ function hasTurkeyContext(
       "lira",
       "akp",
       "chp",
+      "kilicdaroglu",
+      "kurultay",
+      "mutlak butlan",
+      "muhalefet",
+      "parti lideri",
       "ysk",
       "meclis",
     ]) ||
@@ -1112,11 +1173,16 @@ function sanitizeThumbnail(value: string | undefined) {
   if (
     lowered.includes("encrypted-tbn") ||
     lowered.includes("gstatic.com") ||
-    lowered.includes("googleusercontent.com")
+    lowered.includes("googleusercontent.com") ||
+    lowered.includes("google.com/s2/favicons") ||
+    lowered.includes("favicon") ||
+    lowered.includes("profile_images")
   ) {
     return null;
   }
-  return value;
+  return value
+    .replace(/([?&])name=(?:small|thumb|360x360)(&|$)/i, "$1name=large$2")
+    .replace(/([?&])format=jpg&name=small/i, "$1format=jpg&name=large");
 }
 
 function decodeHtmlEntities(value: string) {

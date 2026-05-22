@@ -109,7 +109,7 @@ export async function POST(request: Request) {
   const modelAnalysis = preservePreviousAnalysisOnRefreshGap(
     refreshedModelAnalysis,
     previousRun?.modelAnalysis,
-    paidResearch.status,
+    paidResearch,
   );
   const cryptoBench = evaluateCryptoAnalystBench({
     input,
@@ -162,13 +162,15 @@ function findPreviousRun(
 function preservePreviousAnalysisOnRefreshGap(
   refreshed: LiveAgentModelAnalysis,
   previous: LiveAgentModelAnalysis | undefined,
-  paidStatus: string,
+  paidResearch: Awaited<ReturnType<typeof runLiveX402Research>>,
 ): LiveAgentModelAnalysis {
   if (refreshed.status === "ok") return refreshed;
+  const okPaidServices = paidResearch.services.filter((service) => service.status === "ok").length;
+  if (okPaidServices > 0) return refreshed;
   if (!previous || previous.status !== "ok") return refreshed;
 
   const note =
-    `Circle x402 paid research completed with status '${paidStatus}', but the live model refresh did not return a usable replacement memo. The previous thesis is preserved and the paid evidence is shown in the x402 evidence sections.`;
+    `Circle x402 paid research completed with status '${paidResearch.status}', but no usable paid evidence was returned for a replacement memo. The previous thesis is shown with the x402 evidence sections.`;
 
   return {
     ...previous,
@@ -193,14 +195,18 @@ function buildPaidResearchQuery(input: z.infer<typeof liveResearchSchema>) {
 
   return [
     `Current date: ${currentDate}. Prioritize fresh evidence from the last 30-45 days. Use older sources only for explicit historical baselines, head-to-head history, or long-term comparison context.`,
-    `Prediction market research: ${input.market}`,
+    input.venue === "Draft"
+      ? `Prediction-market idea research: ${input.market}`
+      : `Prediction market research: ${input.market}`,
     `Venue: ${input.venue}; category: ${input.category}; current venue price signal: ${probability}. Treat this as a market quote, not an official probability label.`,
     input.outcomeSummary ? `Multi-outcome/event market outcomes and venue quotes: ${input.outcomeSummary}` : "",
     input.marketSlug ? `Market slug: ${input.marketSlug}.` : "",
     input.conditionId ? `Condition ID: ${input.conditionId}.` : "",
     input.tokenIds?.length ? `Token IDs: ${input.tokenIds.slice(0, 4).join(", ")}.` : "",
     input.originalUrl ? `Original market URL: ${input.originalUrl}.` : "",
-    "Find whether YES or NO has positive expected value. Include recent news, official sources, social/sentiment signals if available, comparable markets, market manipulation risk, source credibility, and missing evidence.",
+    input.venue === "Draft"
+      ? "Find fresh evidence, public attention, credible sources, comparable markets, market-design angles, resolution/oracle ideas, manipulation concerns, source credibility, and missing evidence. Do not force a YES/NO bet without a live venue quote."
+      : "Find whether YES or NO has positive expected value. Include recent news, official sources, social/sentiment signals if available, comparable markets, market manipulation risk, source credibility, and missing evidence.",
     "If this is a sports/esports/competition market, include head-to-head history, recent form, similar-strength opponents, roster/injury/schedule news, and match-fixing/integrity history.",
     "If this is a legal/political-person market, separate allegation, detention, indictment, conviction, sentencing, appeal, and official source status.",
     "Return evidence useful for Kelly-style sizing, hedge/early-close conditions, and manual trade intent review.",

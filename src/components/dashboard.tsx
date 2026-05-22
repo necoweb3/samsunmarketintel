@@ -196,6 +196,8 @@ type AgentRunModelAnalysis = {
     hedgeOrExit: string | null;
   } | null;
   usage: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
     totalTokens: number | null;
   } | null;
   error?: string;
@@ -269,6 +271,7 @@ type AgentRunRecord = {
       purpose: string;
       rawText?: string | null;
       summary: string;
+      durationMs?: number | null;
       error?: string;
       payment?: {
         amount: string | null;
@@ -284,6 +287,7 @@ type AgentRunRecord = {
     }>;
     savedTo: string | null;
     createdAt: string;
+    durationMs?: number | null;
   };
   baselineAnalysis?: AgentRunModelAnalysis;
   modelAnalysis?: AgentRunModelAnalysis;
@@ -1592,6 +1596,76 @@ export function Dashboard({
     }
   }
 
+  async function clearMarkets() {
+    setLinkedMarkets([]);
+    setSelectedMarketId("");
+    setX402Snapshot((current) => ({
+      ...current,
+      count: 0,
+      markets: [],
+      updatedAt: new Date().toISOString(),
+    }));
+    setAgentRunLedgerState({
+      status: "ok",
+      runs: [],
+      updatedAt: new Date().toISOString(),
+    });
+    try {
+      window.localStorage.removeItem(linkedMarketsStorageKey);
+    } catch {
+      // Browser storage is only a convenience.
+    }
+    try {
+      const response = await fetch("/api/agent/run", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ all: true }),
+      });
+      const data = (await response.json()) as {
+        status: "ok" | "error";
+        ledger?: AgentRunLedgerState;
+      };
+      if (response.ok && data.status === "ok" && data.ledger) {
+        setAgentRunLedgerState({
+          status: "ok",
+          runs: data.ledger.runs,
+          updatedAt: data.ledger.updatedAt,
+        });
+      }
+    } catch {
+      // Local clear has already taken effect for this session.
+    }
+  }
+
+  async function clearActivity() {
+    setAgentRunLedgerState({
+      status: "ok",
+      runs: [],
+      updatedAt: new Date().toISOString(),
+    });
+    setIntentLedgerState({
+      status: "ok",
+      intents: [],
+      updatedAt: new Date().toISOString(),
+    });
+    setTradeIntentState(emptyTradeIntentState);
+    setRecordedIntentReceiptState(emptyRecordedIntentReceiptState);
+    try {
+      await Promise.all([
+        fetch("/api/agent/run", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ all: true }),
+        }),
+        fetch("/api/agent/intent", { method: "DELETE" }),
+      ]);
+    } catch {
+      // Local clear has already taken effect for this session.
+    }
+  }
+
   function ensureChatThread(prompt: string) {
     if (activeThreadId) return activeThreadId;
 
@@ -2288,6 +2362,7 @@ export function Dashboard({
             tradeIntent={tradeIntentState}
             receipt={recordedIntentReceiptState}
             activeTrace={chatTrace}
+            onClearMarkets={clearMarkets}
           />
         ) : null}
 
@@ -2319,6 +2394,7 @@ export function Dashboard({
             receipt={recordedIntentReceiptState}
             tradeIntent={tradeIntentState}
             onRecordArcProof={recordArcProof}
+            onClearActivity={clearActivity}
           />
         ) : null}
 
@@ -2644,9 +2720,9 @@ function DemoBudgetPanel() {
     : "checking";
 
   return (
-    <section className="mi-budgetPanel" aria-label="Demo credits">
+    <section className="mi-budgetPanel" aria-label="Balances">
       <div className="mi-budgetHeader">
-        <span>Demo credits</span>
+        <span>Balances</span>
         <small>{checkedLabel}</small>
       </div>
       {budget.items.length > 0 ? (
@@ -2766,7 +2842,10 @@ function ChatMessageBubble({
                   {paidServicesForRun.map((service) => (
                     <div className={`mi-paidService ${service.status}`} key={service.id}>
                       <strong>{service.name}</strong>
-                      <span>{service.provider} / {formatPaidServiceStatusLabel(service.status)}</span>
+                      <span>
+                        {service.provider} / {formatPaidServiceStatusLabel(service.status)}
+                        {service.durationMs ? ` / ${formatDuration(service.durationMs)}` : ""}
+                      </span>
                       <p>{formatPaidServiceSummary(service)}</p>
                     </div>
                   ))}
@@ -2903,7 +2982,7 @@ function AgentTrace({
   if (steps.length === 0) return null;
   const completed = steps.every((step) => step.status === "done");
   const blocked = steps.some((step) => step.status === "blocked");
-  const title = blocked ? "Analysis needs attention" : completed ? "Completed analysis" : "Running analysis";
+  const title = blocked ? buildTraceAttentionTitle(steps) : completed ? "Completed analysis" : "Running analysis";
   const status = blocked ? "blocked" : completed ? "done" : "running";
 
   if (collapsible && (completed || blocked)) {
@@ -2930,6 +3009,13 @@ function AgentTrace({
       <AgentTraceRows steps={steps} />
     </div>
   );
+}
+
+function buildTraceAttentionTitle(steps: AgentTraceStep[]) {
+  const visibleProblems = steps.filter((step) => step.status === "blocked");
+  const dataGaps = visibleProblems.filter((step) => /gap|skipped|unusable|error|failed/i.test(`${step.label} ${step.detail}`));
+  if (dataGaps.length > 0) return `x402 partial: ${dataGaps.length} data gap${dataGaps.length === 1 ? "" : "s"}`;
+  return "Review needed";
 }
 
 function AgentTraceRows({ steps }: { steps: AgentTraceStep[] }) {
@@ -3041,6 +3127,7 @@ function TradePlanCard({ run, compact = false }: { run: AgentRunRecord; compact?
   const targetOutcome = plan.targetOutcome ?? "No single outcome selected";
   const status = formatTradePlanStatus(plan.status);
   const side = plan.side === "NONE" ? "No trade" : plan.side;
+  const displayedEdge = computeDisplayTradeEdge(run, plan);
 
   return (
     <section className={compact ? "mi-tradePlanCard compact" : "mi-tradePlanCard"}>
@@ -3056,11 +3143,17 @@ function TradePlanCard({ run, compact = false }: { run: AgentRunRecord; compact?
         <DataPoint label="Side" value={side} />
         <DataPoint label="Venue quote" value={plan.marketQuote ?? formatRunMarketPrice(run)} />
         <DataPoint label="Fair probability" value={formatPercent(plan.fairProbability)} />
-        <DataPoint label="Edge" value={formatEdge(plan.edge)} />
+        <DataPoint label="Edge" value={formatEdge(displayedEdge)} />
         <DataPoint label="Plan confidence" value={formatPercent(plan.confidence)} />
       </div>
 
       <p>{cleanUserFacingText(plan.rationale)}</p>
+      {run.sizing.stakeUsdc <= 0 ? (
+        <div className="mi-stakeReason">
+          <strong>Why stake is $0</strong>
+          <span>{cleanUserFacingText(run.sizing.reason)}</span>
+        </div>
+      ) : null}
 
       {(plan.alternative || plan.hedgeOrExit) ? (
         <div className="mi-tradePlanNotes">
@@ -3080,6 +3173,22 @@ function TradePlanCard({ run, compact = false }: { run: AgentRunRecord; compact?
       ) : null}
     </section>
   );
+}
+
+function computeDisplayTradeEdge(
+  run: AgentRunRecord,
+  plan: NonNullable<AgentRunModelAnalysis["tradePlan"]>,
+) {
+  if (typeof plan.edge === "number" && Number.isFinite(plan.edge)) return plan.edge;
+  const quote = run.analysis?.marketProbability;
+  const fair = plan.fairProbability;
+  if (quote === null || quote === undefined || fair === null || fair === undefined) return null;
+  if (plan.side === "NO") {
+    const yesFair = fair > 0.5 ? 1 - fair : fair;
+    return Number((quote - yesFair).toFixed(4));
+  }
+  if (plan.side === "YES") return Number((fair - quote).toFixed(4));
+  return null;
 }
 
 function IntegrityBadge({ run, compact = false }: { run: AgentRunRecord; compact?: boolean }) {
@@ -3214,7 +3323,7 @@ function X402CostEstimate({ compact = false }: { compact?: boolean }) {
       <div>
         <strong>x402 upgrade estimate</strong>
         <p>
-          Paid context runs BlockRun, Tavily, Exa/Parallel, market-data and social services first; Perplexity Deep Research runs after that evidence pass.
+          Paid context runs BlockRun, Tavily, Exa/Parallel, market-data, social services, and Perplexity Deep Research in parallel, then merges the evidence.
           Gateway spendable balance is checked before the paid pass, so an empty wallet is blocked before services are called.
         </p>
       </div>
@@ -3512,16 +3621,15 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
   const errors = services.filter((service) => service.status === "error").length;
   const actualPaid =
     typeof run.paidResearch.actualPaidUsdc === "number" ? run.paidResearch.actualPaidUsdc : null;
-  const beforeDecision = formatActionLabel(run.action);
+  const beforeDecision = formatActionLabel(run.baselineAnalysis?.recommendation ?? run.action);
   const afterDecision = formatActionLabel(run.modelAnalysis?.recommendation ?? run.action);
-  const confidenceBefore = run.confidence;
+  const confidenceBefore = run.baselineAnalysis?.confidence ?? run.confidence;
   const confidenceAfter = run.modelAnalysis?.confidence ?? run.confidence;
-  const confidenceDelta = Math.round(confidenceAfter - confidenceBefore);
+  const confidenceDelta = Math.round((confidenceAfter - confidenceBefore) * 100);
   const flow = buildHolderFlowSnapshot(run);
   const social = buildSocialEngagementSnapshot(run);
   const holderCount = flow?.entries.length ?? 0;
   const socialCount = social?.posts.length ?? 0;
-
   return [
     {
       label: "Decision refresh",
@@ -3544,7 +3652,7 @@ function buildPaidResearchImpact(run: AgentRunRecord) {
       value: holderCount > 0 ? `${holderCount} holders` : "No rows",
       detail:
         holderCount > 0
-          ? "Returned holder-side exposure was folded into integrity risk."
+          ? "Returned holder-side exposure was folded into directional context."
           : "No exact holder rows were available, so execution remains review-first.",
     },
     {
@@ -3588,7 +3696,7 @@ function formatAgentIntentLabel(
     tradePlan && typeof tradePlan === "object" && "targetOutcome" in tradePlan
       ? (tradePlan.targetOutcome as string | null)
       : null;
-  if (!target) return `Use agent side ${side} intent`;
+  if (!target || target.toUpperCase() === side) return `Use agent ${side} intent`;
   return `Use ${truncateLabel(target, 32)} ${side} intent`;
 }
 
@@ -3819,15 +3927,16 @@ function computeIntegrityStatus(run: AgentRunRecord) {
   const paidServices = visiblePaidResearchServices(run);
   const paidOk = paidServices.filter((service) => service.status === "ok").length;
   const paidTotal = paidServices.length;
+  const recommendedSide = recommendedSideForRun(run);
+  const topSide = holderTotals.find((item) => item.amountUsd === topSideUsd)?.side ?? null;
   const notes = (run.modelAnalysis?.sourceCredibilityNotes ?? []).join(" ").toLowerCase();
-  const missing = (run.modelAnalysis?.missingEvidence ?? []).join(" ").toLowerCase();
+  const explicitManipulationNote =
+    /(manipulation|wash trading|coordinated|sybil)/i.test(notes) &&
+    !/(not manipulation|not automatically manipulation|not manipulation by itself|directional context)/i.test(notes);
   const suspicious =
     riskGate === "blocked" ||
-    notes.includes("manipulation") ||
-    notes.includes("one-sided") ||
-    notes.includes("concentration") ||
-    missing.includes("order book") ||
-    concentration >= 0.78;
+    explicitManipulationNote ||
+    (concentration >= 0.9 && topSide !== recommendedSide);
 
   if (suspicious) {
     return {
@@ -3837,6 +3946,15 @@ function computeIntegrityStatus(run: AgentRunRecord) {
       detail: hasFlow
         ? "Holder flow or source notes show concentration/manipulation risk; treat as review-first."
         : "The model flagged integrity risk, but exact holder flow is not available yet.",
+    };
+  }
+
+  if (hasFlow && concentration >= 0.6 && topSide === recommendedSide && recommendedSide !== "NONE") {
+    return {
+      label: "Holder conviction",
+      tone: "clean",
+      score: clampScore(38 + Math.round(concentration * 32)),
+      detail: `Returned holder exposure is concentrated on ${topSide}, matching the agent lean. Treat it as directional context, not manipulation by itself.`,
     };
   }
 
@@ -3877,6 +3995,15 @@ function buildConfidenceBreakdown(run: AgentRunRecord) {
   const missingCount = run.modelAnalysis?.missingEvidence.length ?? 0;
   const researchLinks = run.marketResearch?.sourceLinks.length ?? 0;
   const riskGate = run.modelAnalysis?.riskGate ?? run.riskGate;
+  const social = buildSocialEngagementSnapshot(run);
+  const freshPaidResearch = paidServices.some((service) =>
+    service.status === "ok" &&
+    /tavily|exa|parallel|perplexity|x advanced|twitter|news/i.test(`${service.name} ${service.id}`),
+  );
+  const newsFreshnessBase =
+    freshPaidResearch || (social?.posts.length ?? 0) > 0
+      ? 70 + Math.min(social?.posts.length ?? 0, 5) * 4
+      : 35 + Math.min(researchLinks, 6) * 8 + (run.marketResearch?.status === "ok" ? 12 : 0);
 
   return [
     {
@@ -3885,7 +4012,7 @@ function buildConfidenceBreakdown(run: AgentRunRecord) {
     },
     {
       label: "News freshness",
-      score: clampScore(35 + Math.min(researchLinks, 6) * 8 + (run.marketResearch?.status === "ok" ? 12 : 0)),
+      score: clampScore(newsFreshnessBase),
     },
     {
       label: "Source quality",
@@ -4076,6 +4203,16 @@ function formatUsdValue(value: number) {
   }).format(value);
 }
 
+function formatDuration(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value) || value <= 0) return "n/a";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  const seconds = value / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds >= 10 ? 0 : 1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
+
 function formatCompactNumber(value: number) {
   if (!Number.isFinite(value)) return "0";
   return new Intl.NumberFormat("en-US", {
@@ -4178,24 +4315,9 @@ function isCryptoQualityRun(run: AgentRunRecord) {
     .join(" ")
     .toLowerCase();
 
-  return [
-    "crypto",
-    "bitcoin",
-    "btc",
-    "ethereum",
-    "eth",
-    "solana",
-    "sol",
-    "usdc",
-    "stablecoin",
-    "defi",
-    "web3",
-    "token",
-    "blockchain",
-    "onchain",
-    "on-chain",
-    "wallet",
-  ].some((term) => haystack.includes(term));
+  return /\b(crypto|bitcoin|btc|ethereum|eth|solana|sol|usdc|usdt|stablecoin|defi|web3|blockchain|onchain|on-chain|nft|airdrop|staking)\b/i.test(
+    haystack,
+  );
 }
 
 function formatQualityDimension(key: string) {
@@ -4225,6 +4347,7 @@ function MarketsPage({
   tradeIntent,
   receipt,
   activeTrace,
+  onClearMarkets,
 }: {
   marketSearch: string;
   setMarketSearch: (value: string) => void;
@@ -4246,6 +4369,7 @@ function MarketsPage({
   tradeIntent: TradeIntentState;
   receipt: RecordedIntentReceiptState;
   activeTrace: AgentTraceStep[];
+  onClearMarkets: () => void;
 }) {
   const recommendation = selectedRun?.modelAnalysis?.recommendation ?? selectedRun?.action ?? "WAIT";
   const selectedPaidServices = selectedRun ? visiblePaidResearchServices(selectedRun) : [];
@@ -4269,13 +4393,24 @@ function MarketsPage({
           <p>Market intelligence</p>
           <h1>Prediction Market Intelligence</h1>
         </div>
-        <div className="mi-search">
-          <Search size={16} />
-          <input
-            value={marketSearch}
-            onChange={(event) => setMarketSearch(event.target.value)}
-            placeholder="Search Polymarket, category, signal..."
-          />
+        <div className="mi-pageTitleActions">
+          <button
+            type="button"
+            className="mi-softButton"
+            onClick={onClearMarkets}
+            disabled={marketList.length === 0}
+            title="Clear loaded markets and analyzed market history."
+          >
+            Clear
+          </button>
+          <div className="mi-search">
+            <Search size={16} />
+            <input
+              value={marketSearch}
+              onChange={(event) => setMarketSearch(event.target.value)}
+              placeholder="Search Polymarket, category, signal..."
+            />
+          </div>
         </div>
       </div>
 
@@ -4707,18 +4842,19 @@ function NewsBiteCard({
   onCopy: () => void;
 }) {
   const showSignal = item.marketPotential !== "Medium";
+  const [imageFailed, setImageFailed] = useState(false);
+  const thumbnailUrl = imageFailed ? null : sanitizeDisplayThumbnail(item.thumbnailUrl);
+  const isPinnedExample = item.id.startsWith("featured-");
 
   return (
     <article className={showSignal ? `mi-newsBite ${item.marketPotential.toLowerCase()}` : "mi-newsBite"}>
       <div className="mi-newsThumb">
-        {item.thumbnailUrl ? (
+        {thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             alt=""
-            src={item.thumbnailUrl}
-            onError={(event) => {
-              event.currentTarget.remove();
-            }}
+            src={thumbnailUrl}
+            onError={() => setImageFailed(true)}
           />
         ) : (
           <Newspaper size={26} />
@@ -4730,9 +4866,15 @@ function NewsBiteCard({
         <div className="mi-newsMeta">
           <span>{item.sourceName}</span>
           <span>{item.horizon}</span>
+          {isPinnedExample ? <span title="Pinned demo case for jurors.">Pinned example</span> : null}
         </div>
         <h3>{item.title}</h3>
         <p>{item.summary}</p>
+        {isPinnedExample ? (
+          <small className="mi-pinnedIdeaNote">
+            Pinned intentionally as a demo case: it shows how local Turkey news can become a prediction-market proposal.
+          </small>
+        ) : null}
       </div>
 
       <div className="mi-newsBiteFooter">
@@ -4779,6 +4921,14 @@ function NewsBiteCard({
       </div>
     </article>
   );
+}
+
+function sanitizeDisplayThumbnail(value: string | null | undefined) {
+  if (!value) return null;
+  if (/google\.com\/s2\/favicons|favicon|profile_images|twimg\.com\/profile_images/i.test(value)) return null;
+  return value
+    .replace(/([?&])name=(?:small|thumb|360x360)(&|$)/i, "$1name=large$2")
+    .replace(/([?&])format=jpg&name=small/i, "$1format=jpg&name=large");
 }
 
 function MarketProposalCard({ idea }: { idea: EventIdea }) {
@@ -4994,12 +5144,14 @@ function ActivityPage({
   receipt,
   tradeIntent,
   onRecordArcProof,
+  onClearActivity,
 }: {
   runs: AgentRunRecord[];
   intents: IntentLedgerState["intents"];
   receipt: RecordedIntentReceiptState;
   tradeIntent: TradeIntentState;
   onRecordArcProof: (intentId?: string) => void;
+  onClearActivity: () => void;
 }) {
   const sortedRuns = [...runs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const sortedIntents = [...intents].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
@@ -5015,6 +5167,15 @@ function ActivityPage({
           <p>Proof and agent memory</p>
           <h1>Activity</h1>
         </div>
+        <button
+          type="button"
+          className="mi-softButton"
+          onClick={onClearActivity}
+          disabled={runs.length === 0 && intents.length === 0}
+          title="Clear analysis runs and manual intent history."
+        >
+          Clear
+        </button>
       </div>
 
       {tradeIntent.message ? (
@@ -5795,7 +5956,7 @@ function buildPaidResearchTrace(
   const serviceSteps: AgentTraceStep[] = run?.paidResearch
     ? visibleServices.map((service) => ({
         label: service.name,
-        detail: `${service.provider}: ${formatPaidServiceSummary(service)}`,
+        detail: `${service.provider}${service.durationMs ? ` / ${formatDuration(service.durationMs)}` : ""}: ${formatPaidServiceSummary(service)}`,
         status: mapPaidServiceStatus(service.status),
       }))
     : plannedPaidResearchServices.map((service) => ({

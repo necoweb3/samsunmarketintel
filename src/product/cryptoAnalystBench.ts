@@ -40,39 +40,27 @@ type CryptoAnalystBenchInput = {
   paidResearch?: LiveX402ResearchSummary | null;
 };
 
-const cryptoTerms = [
-  "crypto",
-  "bitcoin",
-  "btc",
-  "ethereum",
-  "eth",
-  "solana",
-  "sol",
-  "usdc",
-  "usdt",
-  "stablecoin",
-  "defi",
-  "web3",
-  "token",
-  "airdrop",
-  "dogecoin",
-  "litecoin",
-  "memecoin",
-  "chain",
-  "blockchain",
-  "nft",
-  "staking",
-  "gas",
-  "layer 1",
-  "layer-1",
-  "l1",
-  "layer 2",
-  "layer-2",
-  "l2",
-  "coingecko",
-  "onchain",
-  "on-chain",
-  "wallet",
+const cryptoTermPatterns = [
+  { label: "crypto", pattern: /\bcrypto\b/i },
+  { label: "bitcoin", pattern: /\bbitcoin\b|\bbtc\b/i },
+  { label: "ethereum", pattern: /\bethereum\b|\beth\b/i },
+  { label: "solana", pattern: /\bsolana\b|\bsol\b/i },
+  { label: "usdc", pattern: /\busdc\b/i },
+  { label: "usdt", pattern: /\busdt\b/i },
+  { label: "stablecoin", pattern: /\bstablecoin\b/i },
+  { label: "defi", pattern: /\bdefi\b/i },
+  { label: "web3", pattern: /\bweb3\b/i },
+  { label: "airdrop", pattern: /\bairdrop\b/i },
+  { label: "dogecoin", pattern: /\bdogecoin\b/i },
+  { label: "litecoin", pattern: /\blitecoin\b/i },
+  { label: "memecoin", pattern: /\bmemecoin\b/i },
+  { label: "blockchain", pattern: /\bblockchain\b/i },
+  { label: "nft", pattern: /\bnft\b/i },
+  { label: "staking", pattern: /\bstaking\b/i },
+  { label: "layer 1", pattern: /\blayer[\s-]?1\b|\bl1\b/i },
+  { label: "layer 2", pattern: /\blayer[\s-]?2\b|\bl2\b/i },
+  { label: "coingecko", pattern: /\bcoingecko\b/i },
+  { label: "onchain", pattern: /\bonchain\b|\bon-chain\b/i },
 ];
 
 export function shouldRunCryptoAnalystBench(input: AgentRunInput) {
@@ -85,7 +73,15 @@ export function shouldRunCryptoAnalystBench(input: AgentRunInput) {
     .join(" ")
     .toLowerCase();
 
-  return cryptoTerms.filter((term) => haystack.includes(term));
+  const nonCryptoCategory = /\b(legal|political|politic|geopolitic|macro|sports|football|competition|court|local news|custom intelligence)\b/i.test(
+    input.category,
+  );
+  const matches = cryptoTermPatterns
+    .filter((term) => term.pattern.test(haystack))
+    .map((term) => term.label);
+
+  if (nonCryptoCategory && matches.length === 0) return [];
+  return Array.from(new Set(matches));
 }
 
 export function evaluateCryptoAnalystBench({

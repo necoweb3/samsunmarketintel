@@ -60,6 +60,18 @@ export async function removeAgentRunsByMarketId(
   return next;
 }
 
+export async function clearAgentRunLedger(path = DEFAULT_RUN_LEDGER_PATH) {
+  const next: AgentRunLedger = {
+    runs: [],
+    updatedAt: new Date().toISOString(),
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`);
+
+  return next;
+}
+
 function isAgentRunRecord(value: unknown): value is AgentRunRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;

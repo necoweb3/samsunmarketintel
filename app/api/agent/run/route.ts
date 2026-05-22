@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { requestLiveAgentModelAnalysis } from "@/src/product/agentModelAnalysis";
 import { readAgentBankrollUsdc } from "@/src/product/agentBankroll";
-import { appendAgentRun, readAgentRunLedger, removeAgentRunsByMarketId } from "@/src/product/agentRunLedger";
+import { appendAgentRun, clearAgentRunLedger, readAgentRunLedger, removeAgentRunsByMarketId } from "@/src/product/agentRunLedger";
 import { applyModelAnalysisToAgentRun, buildAgentRun, type AgentMarketResearch } from "@/src/product/agentRun";
 import { evaluateCryptoAnalystBench } from "@/src/product/cryptoAnalystBench";
 import { readIntentLedger } from "@/src/product/intentLedger";
@@ -55,9 +55,14 @@ export async function GET() {
   );
 }
 
-const deleteRunSchema = z.object({
-  marketId: z.string().min(1),
-});
+const deleteRunSchema = z.union([
+  z.object({
+    marketId: z.string().min(1),
+  }),
+  z.object({
+    all: z.literal(true),
+  }),
+]);
 
 export async function DELETE(request: Request) {
   const parsed = deleteRunSchema.safeParse(await request.json().catch(() => null));
@@ -73,7 +78,9 @@ export async function DELETE(request: Request) {
     );
   }
 
-  const ledger = await removeAgentRunsByMarketId(parsed.data.marketId);
+  const ledger = "all" in parsed.data
+    ? await clearAgentRunLedger()
+    : await removeAgentRunsByMarketId(parsed.data.marketId);
 
   return NextResponse.json(
     {
@@ -211,6 +218,16 @@ function buildTopicQuery(input: z.infer<typeof runSchema>) {
     normalized.includes("vs ")
   ) {
     return `${input.market} head to head record recent form similar opponents injuries roster integrity match fixing betting odds movement`;
+  }
+
+  if (
+    normalized.includes("kilicdaroglu") ||
+    normalized.includes("kılıçdaroğlu") ||
+    normalized.includes("chp") ||
+    normalized.includes("kurultay") ||
+    normalized.includes("mutlak butlan")
+  ) {
+    return `${input.market} Kemal Kilicdaroglu Kılıçdaroğlu CHP kurultay mutlak butlan court ruling latest Turkey politics verified news`;
   }
 
   if (

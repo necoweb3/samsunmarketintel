@@ -2,7 +2,7 @@ import type { FlowAlert } from "@/src/product/integrityAnalysis";
 import type { ResearchSnapshot, ResearchSource } from "@/src/product/researchAnalysis";
 
 export type AgentThesis = {
-  action: "WAIT" | "DO_NOT_BET" | "RESEARCH_MORE";
+  action: "BET_YES" | "BET_NO" | "WAIT" | "DO_NOT_BET" | "RESEARCH_MORE";
   mode: "Manual";
   riskGate: "open" | "review" | "blocked";
   headline: string;
@@ -44,7 +44,8 @@ export function buildAgentThesis({
   const integrityRisk = scoreIntegrity(alert);
   const coverageScore = marketCount > 0 ? 0.14 : 0;
   const evidenceScore = clamp01(researchQuality.score + integrityRisk.evidenceBonus + coverageScore);
-  const action = decideAction(integrityRisk.status, researchQuality.status);
+  const directionalLean = inferDirectionalLean(research);
+  const action = decideAction(integrityRisk.status, researchQuality.status, directionalLean);
   const riskGate = decideRiskGate(integrityRisk.status, researchQuality.status);
   const confidence = clamp01(0.34 + evidenceScore * 0.42 + integrityRisk.confidenceBonus);
   const reasons = buildReasons({ marketCount, alert, research, researchQuality });
@@ -143,9 +144,12 @@ function scoreIntegrity(alert: FlowAlert | null) {
 function decideAction(
   integrityStatus: AgentThesis["integrity"]["status"],
   researchStatus: AgentThesis["research"]["status"],
+  directionalLean: "YES" | "NO" | null,
 ): AgentThesis["action"] {
   if (integrityStatus === "blocked") return "DO_NOT_BET";
   if (researchStatus === "missing" || researchStatus === "thin") return "RESEARCH_MORE";
+  if (directionalLean === "YES") return "BET_YES";
+  if (directionalLean === "NO") return "BET_NO";
   return "WAIT";
 }
 
@@ -161,6 +165,8 @@ function decideRiskGate(
 }
 
 function buildHeadline(action: AgentThesis["action"], riskGate: AgentThesis["riskGate"]) {
+  if (action === "BET_YES") return "Manual YES lean found";
+  if (action === "BET_NO") return "Manual NO lean found";
   if (action === "DO_NOT_BET") return "Execution blocked by integrity risk";
   if (action === "RESEARCH_MORE") return "More source validation needed";
   if (riskGate === "review") return "Manual review before any intent";
@@ -174,6 +180,10 @@ function buildSummary(
 ) {
   if (action === "DO_NOT_BET") {
     return "The agent has enough flow evidence to reject execution until the suspicious activity is resolved.";
+  }
+
+  if (action === "BET_YES" || action === "BET_NO") {
+    return "The evidence set points to a directional manual lean, but execution still requires human approval.";
   }
 
   if (researchStatus === "thin" || researchStatus === "missing") {
@@ -249,11 +259,27 @@ function buildNextStep(action: AgentThesis["action"], missingInputs: string[]) {
     return "Keep execution disabled and record a review receipt on Arc if this market matters.";
   }
 
+  if (action === "BET_YES" || action === "BET_NO") {
+    return "Review sizing, source quality, and policy gates before staging a manual intent.";
+  }
+
   if (missingInputs.length > 0) {
     return `Collect: ${missingInputs.join(", ")}.`;
   }
 
   return "Keep in manual mode and prepare an approval intent only after position sizing is reviewed.";
+}
+
+function inferDirectionalLean(research: ResearchSnapshot | null): "YES" | "NO" | null {
+  if (!research) return null;
+  const text = [research.query, ...research.topSources.slice(0, 8).map((source) => source.content)].join(" ");
+  if (/\b(?:yes|bet yes|buy yes)\b.{0,80}\b(?:positive ev|expected value|advantaged|mispriced|edge)\b/i.test(text)) {
+    return "YES";
+  }
+  if (/\b(?:no|bet no|buy no)\b.{0,80}\b(?:positive ev|expected value|advantaged|mispriced|edge)\b/i.test(text)) {
+    return "NO";
+  }
+  return null;
 }
 
 function countHighCredibilitySources(research: ResearchSnapshot | null) {

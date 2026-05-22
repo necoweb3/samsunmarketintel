@@ -132,15 +132,72 @@ export function applyModelAnalysisToAgentRun(
   modelAnalysis: LiveAgentModelAnalysis,
 ): AgentRunRecord {
   if (modelAnalysis.status !== "ok") return run;
+  const modelEdge = computeModelEdge(run, modelAnalysis);
+  const modelSizing = computeModelSizing(run, modelAnalysis);
 
   return {
     ...run,
     action: mapModelRecommendation(modelAnalysis.recommendation, run.action),
     riskGate: modelAnalysis.riskGate,
     summary: modelAnalysis.summary,
-    edge: modelAnalysis.tradePlan?.edge ?? run.edge,
+    edge: modelAnalysis.tradePlan?.edge ?? modelEdge ?? run.edge,
     confidence: modelAnalysis.confidence,
+    sizing: modelSizing ?? run.sizing,
   };
+}
+
+function computeModelEdge(run: AgentRunRecord, modelAnalysis: LiveAgentModelAnalysis) {
+  const marketQuote = run.analysis.marketProbability;
+  const fairProbability = normalizeFairProbabilityForMarket(modelAnalysis);
+  const side = modelAnalysis.tradePlan?.side;
+
+  if (marketQuote === null || fairProbability === null || fairProbability === undefined) return null;
+  if (side === "YES") return Number((fairProbability - marketQuote).toFixed(4));
+  if (side === "NO") return Number((marketQuote - fairProbability).toFixed(4));
+  return Number((fairProbability - marketQuote).toFixed(4));
+}
+
+function computeModelSizing(run: AgentRunRecord, modelAnalysis: LiveAgentModelAnalysis) {
+  const marketProbability = run.analysis.marketProbability;
+  const fairProbability = normalizeFairProbabilityForMarket(modelAnalysis);
+  if (marketProbability === null || fairProbability === null || fairProbability === undefined) return null;
+
+  const risk =
+    modelAnalysis.riskGate === "blocked"
+      ? "High"
+      : modelAnalysis.riskGate === "review"
+        ? "Medium"
+        : run.analysis.inputRisk;
+
+  return estimatePositionSize({
+    marketProbability,
+    agentProbability: fairProbability,
+    confidence: modelAnalysis.tradePlan?.confidence ?? modelAnalysis.confidence,
+    risk,
+    bankrollUsdc: run.analysis.bankrollUsdc ?? 0,
+  });
+}
+
+function normalizeFairProbabilityForMarket(modelAnalysis: LiveAgentModelAnalysis) {
+  const fairProbability = modelAnalysis.tradePlan?.fairProbability;
+  if (fairProbability === null || fairProbability === undefined) return null;
+
+  const side = modelAnalysis.tradePlan?.side;
+  const rationale = [
+    modelAnalysis.tradePlan?.rationale,
+    modelAnalysis.thesis,
+    modelAnalysis.summary,
+  ].join(" ");
+
+  if (
+    side === "NO" &&
+    fairProbability > 0.5 &&
+    /near zero|tail risk|yes.*(?:below|under|around|closer to)|chance.*(?:low|small)|probability.*(?:2|3|4|5|6|7|8|9|10)%/i.test(rationale)
+  ) {
+    return Number((1 - fairProbability).toFixed(4));
+  }
+
+  return fairProbability;
 }
 
 function readRiskGate(risk: AgentRunInput["risk"], sizing: PositionSizingResult) {

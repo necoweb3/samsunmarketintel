@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { appendTradeIntent, readIntentLedger } from "@/src/product/intentLedger";
+import { appendTradeIntent, clearIntentLedger, readIntentLedger } from "@/src/product/intentLedger";
 import { buildTradeIntent } from "@/src/product/tradeIntent";
 import { evaluateToolSafety } from "@/src/product/toolSafety";
 
@@ -30,6 +30,22 @@ export async function GET() {
     {
       status: "ok",
       ...ledger,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+export async function DELETE() {
+  const ledger = await clearIntentLedger();
+
+  return NextResponse.json(
+    {
+      status: "ok",
+      ledger,
     },
     {
       headers: {

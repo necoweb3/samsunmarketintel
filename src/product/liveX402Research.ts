@@ -9,8 +9,8 @@ import { resolveCircleCliPath } from "@/src/product/circleCli";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LIVE_X402_BUDGET_USDC = 6;
-const DEFAULT_X402_SERVICE_CONCURRENCY = 1;
-const DEFAULT_X402_SERVICE_DELAY_MS = 1250;
+const DEFAULT_X402_SERVICE_CONCURRENCY = 5;
+const DEFAULT_X402_SERVICE_DELAY_MS = 200;
 
 export type LiveX402ServiceId =
   | "blockrun-polymarket-markets"
@@ -45,6 +45,7 @@ export type LiveX402ServiceResult = {
   purpose: string;
   rawText: string | null;
   summary: string;
+  durationMs: number | null;
   error?: string;
   payment?: X402PaymentRecord;
 };
@@ -70,6 +71,7 @@ export type LiveX402ResearchSummary = {
   services: LiveX402ServiceResult[];
   savedTo: string | null;
   createdAt: string;
+  durationMs: number | null;
 };
 
 type LiveX402ResearchInput = {
@@ -91,6 +93,7 @@ type ServicePlan = {
   timeoutSeconds?: number | null;
   execTimeoutMs?: number | null;
   purpose: string;
+  appliesTo?: (query: string) => boolean;
   queryParams?: (query: string) => Record<string, string | number | boolean | undefined>;
   body?: (query: string) => unknown;
 };
@@ -364,6 +367,7 @@ const SERVICE_PLAN: ServicePlan[] = [
     method: "GET",
     maxAmountUsdc: 0.1,
     purpose: "Crypto market breadth context for crypto-linked prediction markets.",
+    appliesTo: isCryptoRelevantQuery,
     queryParams: () => ({
       order: "market_cap_desc",
     }),
@@ -376,6 +380,7 @@ export async function runLiveX402Research({
   maxTotalUsdc = DEFAULT_LIVE_X402_BUDGET_USDC,
   env = process.env,
 }: LiveX402ResearchInput): Promise<LiveX402ResearchSummary> {
+  const researchStartedAt = Date.now();
   const address = env.CIRCLE_MAINNET_AGENT_WALLET_ADDRESS;
   const chain = env.CIRCLE_GATEWAY_CHAIN || "MATIC";
   const createdAt = new Date().toISOString();
@@ -399,9 +404,11 @@ export async function runLiveX402Research({
         purpose: service.purpose,
         rawText: null,
         summary: "Missing CIRCLE_MAINNET_AGENT_WALLET_ADDRESS; paid x402 call was not attempted.",
+        durationMs: 0,
       })),
       savedTo: null,
       createdAt,
+      durationMs: Date.now() - researchStartedAt,
     };
   }
 
@@ -412,6 +419,27 @@ export async function runLiveX402Research({
   > = [];
 
   for (const service of SERVICE_PLAN) {
+    if (service.appliesTo && !service.appliesTo(enrichedQuery)) {
+      plannedServices.push({
+        type: "result",
+        service,
+        result: {
+          id: service.id,
+          name: service.name,
+          provider: service.provider,
+          phase: servicePhase(service),
+          endpoint: typeof service.endpoint === "string" ? service.endpoint : "market-specific endpoint",
+          status: "skipped",
+          maxAmountUsdc: service.maxAmountUsdc,
+          purpose: service.purpose,
+          rawText: null,
+          summary: "Skipped because this market is not crypto, Web3, token, stablecoin, or onchain-related.",
+          durationMs: 0,
+        },
+      });
+      continue;
+    }
+
     const endpoint = buildServiceUrl(service, enrichedQuery);
 
     if (!endpoint) {
@@ -429,6 +457,7 @@ export async function runLiveX402Research({
           purpose: service.purpose,
           rawText: null,
           summary: "Skipped because this market did not provide the condition ID required by the service.",
+          durationMs: 0,
         },
       });
       continue;
@@ -449,6 +478,7 @@ export async function runLiveX402Research({
           purpose: service.purpose,
           rawText: null,
           summary: `Skipped to keep the approved budget under ${maxTotalUsdc} USDC.`,
+          durationMs: 0,
         },
       });
       continue;
@@ -470,21 +500,22 @@ export async function runLiveX402Research({
   const parallelServices = payableServices.filter((planned) => servicePhase(planned.service) === "parallel_context");
   const deepResearchServices = payableServices.filter((planned) => servicePhase(planned.service) === "deep_research");
 
-  const parallelResults = await runServiceQueue(
-    parallelServices,
-    (planned) =>
-      payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
-    env,
-  );
+  const deepResearchQuery = buildDeepResearchQuery(enrichedQuery, []);
+  const [parallelResults, deepResults] = await Promise.all([
+    runServiceQueue(
+      parallelServices,
+      (planned) =>
+        payService({ service: planned.service, query: enrichedQuery, endpoint: planned.endpoint, address, chain }),
+      env,
+    ),
+    runServiceQueue(
+      deepResearchServices,
+      (planned) =>
+        payService({ service: planned.service, query: deepResearchQuery, endpoint: planned.endpoint, address, chain }),
+      env,
+    ),
+  ]);
   for (const result of parallelResults) resultByServiceId.set(result.id, result);
-
-  const deepResearchQuery = buildDeepResearchQuery(enrichedQuery, parallelResults);
-  const deepResults = await runServiceQueue(
-    deepResearchServices,
-    (planned) =>
-      payService({ service: planned.service, query: deepResearchQuery, endpoint: planned.endpoint, address, chain }),
-    env,
-  );
   for (const result of deepResults) resultByServiceId.set(result.id, result);
 
   const services = plannedServices
@@ -505,6 +536,7 @@ export async function runLiveX402Research({
     services,
     savedTo,
     createdAt,
+    durationMs: Date.now() - researchStartedAt,
   };
 
   await mkdir(dirname(savedTo), { recursive: true });
@@ -558,6 +590,7 @@ async function payService({
   address: string;
   chain: string;
 }): Promise<LiveX402ServiceResult> {
+  const startedAt = Date.now();
   const args = [
     "services",
     "pay",
@@ -609,6 +642,7 @@ async function payService({
       purpose: service.purpose,
       rawText,
       summary: payloadError ?? summarizeRawPayload(rawText || stderr),
+      durationMs: Date.now() - startedAt,
       ...(payloadError ? { error: payloadError } : {}),
       ...(payment ? { payment } : {}),
     };
@@ -632,10 +666,25 @@ async function payService({
       purpose: service.purpose,
       rawText,
       summary: truncate(message, 900),
+      durationMs: Date.now() - startedAt,
       error: truncate(message, 900),
       ...(payment ? { payment } : {}),
     };
   }
+}
+
+function isCryptoRelevantQuery(query: string) {
+  const normalized = query
+    .toLowerCase()
+    .replace(/token ids?:\s*[0-9a-z,\s]+/g, " ");
+  const nonCryptoDominant = /\b(kilicdaroglu|kılıçdaroğlu|chp|kurultay|mahkeme|court|iran|pahlavi|football|election|midterm|congress|legal|politic|geopolitic)\b/i.test(
+    normalized,
+  );
+  const strongCryptoPattern =
+    /\b(crypto|bitcoin|btc|ethereum|eth|solana|stablecoin|usdc|usdt|defi|web3|blockchain|onchain|on-chain|altcoin|binance|coinbase|coingecko|nft|airdrop|staking)\b/i;
+  const hasStrongCrypto = strongCryptoPattern.test(normalized);
+  if (nonCryptoDominant && !hasStrongCrypto) return false;
+  return hasStrongCrypto || /\bmarket cap\b/i.test(normalized);
 }
 
 function servicePhase(service: ServicePlan): LiveX402ServiceResult["phase"] {

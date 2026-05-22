@@ -45,6 +45,18 @@ export async function appendTradeIntent(intent: TradeIntent, path = DEFAULT_LEDG
   return next;
 }
 
+export async function clearIntentLedger(path = DEFAULT_LEDGER_PATH) {
+  const next: IntentLedger = {
+    intents: [],
+    updatedAt: new Date().toISOString(),
+  };
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(next, null, 2)}\n`);
+
+  return next;
+}
+
 function isTradeIntent(value: unknown): value is TradeIntent {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;

@@ -71,7 +71,7 @@ export async function GET() {
     items,
   };
   budgetCache = {
-    expiresAt: Date.now() + 5 * 60 * 1000,
+    expiresAt: Date.now() + (payload.status === "ok" ? 5 * 60 * 1000 : 30 * 1000),
     payload,
   };
 
@@ -229,8 +229,9 @@ function unavailableBudgetItem(id: string, label: string, detail: string): Budge
 function summarizeCliError(error: unknown) {
   const record = error && typeof error === "object" ? (error as Record<string, unknown>) : {};
   const stderr = typeof record.stderr === "string" ? record.stderr : "";
+  const stdout = typeof record.stdout === "string" ? record.stdout : "";
   const message = error instanceof Error ? error.message : String(error);
-  const detail = stderr || message;
+  const detail = cleanCliErrorDetail(stderr || stdout || message);
 
   if (/not recognized|ENOENT|no such file|cannot find/i.test(detail)) {
     return "Circle CLI binary unavailable";
@@ -243,6 +244,14 @@ function summarizeCliError(error: unknown) {
   }
 
   return detail.slice(0, 180) || "Circle CLI unavailable";
+}
+
+function cleanCliErrorDetail(value: string) {
+  return value
+    .replace(/By using the Circle CLI[\s\S]*?(?:Privacy Policy:\s*\S+)?/gi, "")
+    .replace(/Command failed:\s*(?:node\s+)?[^\r\n]+/gi, "Circle CLI command failed.")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatDecimal(value: string | number) {

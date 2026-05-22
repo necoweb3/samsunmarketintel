@@ -3094,6 +3094,9 @@ function traceProviderVisualForLabel(label: string) {
   if (lower.includes("polymarket")) return { token: "PM", icon: `${iconPath}polymarket.png`, title: label };
   if (lower.includes("tavily")) return { token: "T", icon: `${iconPath}tavily.png`, title: label };
   if (lower.includes("coingecko")) return { token: "G", icon: `${iconPath}coingecko.png`, title: label };
+  if (lower.includes("question setup")) return { token: "Q", icon: `${iconPath}polymarket.png`, title: label };
+  if (lower.includes("evidence merge")) return { token: "M", icon: `${iconPath}merge.png`, title: label };
+  if (lower.includes("updated call")) return { token: "D", icon: `${iconPath}complete.png`, title: label };
   if (
     lower.includes("x search") ||
     lower.includes("x advanced") ||
@@ -3102,6 +3105,7 @@ function traceProviderVisualForLabel(label: string) {
     lower.includes("twitter")
   ) return { token: "X", icon: `${iconPath}x.png`, title: label };
   if (lower.includes("human approval")) return { token: "H", icon: `${iconPath}manual-gate.png`, title: label };
+  if (lower.includes("manual approval")) return { token: "H", icon: `${iconPath}manual-gate.png`, title: label };
   if (lower.includes("research ingestion")) return { token: "R", icon: `${iconPath}merge.png`, title: label };
   if (lower.includes("decision refresh")) return { token: "D", icon: `${iconPath}complete.png`, title: label };
   if (lower.includes("running")) return { token: "A", icon: `${iconPath}merge.png`, title: label };
